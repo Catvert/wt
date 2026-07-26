@@ -10,6 +10,7 @@ extern crate rust_i18n;
 
 mod ansi;
 mod config;
+mod fuzzy;
 mod git;
 mod i18n;
 mod ops;
@@ -62,6 +63,10 @@ enum Cmd {
         slug: String,
         /// Branch to check out. Defaults to the wt.toml `branch` template.
         branch: Option<String>,
+        /// Where a branch that does not exist yet starts: dev, origin/main, a tag, a
+        /// commit. Defaults to the main repository's HEAD.
+        #[arg(long, value_name = "REF")]
+        from: Option<String>,
         /// Option passed to hooks, available as {{opt.key}}. Repeatable.
         #[arg(long = "set", value_name = "KEY=VALUE")]
         set: Vec<String>,
@@ -151,7 +156,12 @@ fn try_main() -> Result<()> {
     match cli.cmd {
         None => ui::run(Arc::clone(&app)),
         Some(Cmd::Init { .. }) | Some(Cmd::Completions { .. }) => unreachable!(),
-        Some(Cmd::New { slug, branch, set }) => app.cmd_new(&slug, branch.as_deref(), &set),
+        Some(Cmd::New {
+            slug,
+            branch,
+            from,
+            set,
+        }) => app.cmd_new(&slug, branch.as_deref(), from.as_deref(), &set),
         Some(Cmd::Up { slug, set }) => app.cmd_up(&slug, &set),
         Some(Cmd::Down { slug }) => app.cmd_down(&slug),
         Some(Cmd::Ls) => app.cmd_ls(),

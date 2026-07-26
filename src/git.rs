@@ -174,8 +174,24 @@ pub fn branches(main: &Path) -> Vec<BranchInfo> {
 }
 
 /// Creates the worktree, picking the right mode depending on whether the branch exists.
-pub fn worktree_add(main: &Path, path: &Path, branch: &str) -> Result<()> {
+///
+/// `from` is the start point of a branch that has yet to be created — `dev`,
+/// `origin/main`, a tag, a commit. Without it git starts at the main repository's HEAD,
+/// which is only the right guess when that is where the work belongs.
+pub fn worktree_add(main: &Path, path: &Path, branch: &str, from: Option<&str>) -> Result<()> {
     let path_s = path.to_string_lossy().into_owned();
+    // A branch that already exists carries its own history: a start point would be
+    // silently dropped, so say it rather than create something else than what was asked.
+    let reject_start_point = |from: Option<&str>| -> Result<()> {
+        match from {
+            Some(f) => bail!(
+                "{}",
+                t!("err.start_point_on_existing", branch = branch, from = f)
+            ),
+            None => Ok(()),
+        }
+    };
+
     if local_branch_exists(main, branch) {
         if let Some(holder) = branch_worktree(main, branch) {
             bail!(
@@ -187,6 +203,7 @@ pub fn worktree_add(main: &Path, path: &Path, branch: &str) -> Result<()> {
                 )
             );
         }
+        reject_start_point(from)?;
         git(main, &["worktree", "add", &path_s, branch])?;
     } else if remote_branch_exists(main, branch) {
         // origin/foo -> local branch foo tracking it.
@@ -194,12 +211,17 @@ pub fn worktree_add(main: &Path, path: &Path, branch: &str) -> Result<()> {
         if local_branch_exists(main, local) {
             bail!("{}", t!("err.local_branch_exists", branch = local));
         }
+        reject_start_point(from)?;
         git(
             main,
             &["worktree", "add", &path_s, "-b", local, "--track", branch],
         )?;
     } else {
-        git(main, &["worktree", "add", &path_s, "-b", branch])?;
+        let mut args = vec!["worktree", "add", &path_s, "-b", branch];
+        // `git worktree add -b x <path> origin/dev` also sets up the tracking, which is
+        // what someone branching off a remote expects.
+        args.extend(from);
+        git(main, &args)?;
     }
     Ok(())
 }

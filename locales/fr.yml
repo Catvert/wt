@@ -7,6 +7,7 @@ err:
   no_main_repo: "impossible de remonter au dépôt principal"
   branch_in_use: "la branche '%{branch}' est déjà en checkout dans %{path}"
   local_branch_exists: "la branche locale '%{branch}' existe déjà — relance avec ce nom"
+  start_point_on_existing: "la branche '%{branch}' existe déjà — un point de départ (%{from}) ne s'applique qu'à une branche à créer"
   spawn_failed: "lancement de : %{command}"
   command_failed: "échec (%{code}) : %{command}"
   no_free_port: "aucun port libre à partir de %{base}"
@@ -59,6 +60,7 @@ hint:
 
 info:
   creating: "création du worktree (%{branch})"
+  creating_from: "création du worktree (%{branch}, depuis %{from})"
   copying: "copie %{from} -> %{to} (%{mode})"
   no_worktrees: "aucun worktree dans %{path}"
   no_tasks: "aucune tâche définie dans %{path}"
@@ -100,7 +102,8 @@ ui:
   empty_hint: "aucun worktree — appuie sur n pour en créer un"
   running_hint: "↑↓ défiler · action en cours"
   close_hint: "ENTRÉE ferme · ↑↓ défiler"
-  multi_hint: "ESPACE coche · ENTRÉE valide"
+  multi_hint: "TAB coche · ENTRÉE valide"
+  no_match: "aucune correspondance — ÉCHAP efface la recherche"
   input_hint: "ENTRÉE valide · ÉCHAP annule"
   confirm_hint: "o ou y confirme · toute autre touche annule"
   mouse_on: "souris activée"
@@ -115,9 +118,12 @@ ui:
   branch_taken: "branche déjà en checkout dans un autre worktree"
   already_checked_out: "déjà en checkout"
   new_branch: "＋ nouvelle branche"
-  from_head: "créée depuis HEAD"
+  new_branch_hint: "choisis son point de départ"
   branch_title: "branche du nouveau worktree"
+  base_title: "partir de quelle branche ?"
+  head_here: "HEAD"
   slug_title: "slug du nouveau worktree"
+  slug_from: "slug du nouveau worktree (depuis %{base})"
   slug_for: "slug pour %{branch} (ENTRÉE accepte la proposition)"
   empty_slug: "slug vide — création annulée"
   start_options: "options de démarrage de %{slug} (clé=valeur, séparés par un espace)"
@@ -137,7 +143,7 @@ key:
   quit: "q quitter"
 
 help:
-  new: "n  créer un worktree (choix de la branche puis du slug)"
+  new: "n  créer un worktree (branche, point de départ, puis slug)"
   start: "s  démarrer (hooks up)      S  démarrer en saisissant des options"
   stop: "d  arrêter (hooks down)"
   editor: "e  ouvrir dans un éditeur"
@@ -147,6 +153,7 @@ help:
   mouse_toggle: "m  couper/activer la souris (pour copier du texte du terminal)"
   mouse: "Souris : clic sélectionne, double-clic ouvre ; molette défile."
   actions: "ENTRÉE  toutes les actions  q  quitter"
+  picker: "Dans un menu : tape pour chercher (fuzzy, l'espace affine), ↑↓ ou ^N/^P déplacent, TAB coche, ÉCHAP efface puis ferme."
   panel: "La sortie des actions s'affiche dans un panneau (↑↓ défiler, ENTRÉE ferme)."
   interactive: "Seules les tâches interactives et l'éditeur reprennent le terminal."
 

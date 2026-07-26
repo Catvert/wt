@@ -107,6 +107,7 @@ cd mon-projet
 wt init                 # un wt.toml sans service ; --preset web pour port + URL
 $EDITOR wt.toml
 wt new demo             # crée ../mon-projet-wt/demo sur la branche wt/demo
+wt new fix --from dev   # même chose, mais la branche part de dev
 wt                      # interface interactive
 ```
 
@@ -116,7 +117,7 @@ wt                      # interface interactive
 |---|---|
 | `wt` | interface interactive (liste, aperçu, actions) |
 | `wt init [--preset plain\|web] [--force]` | écrit un `wt.toml` d'exemple |
-| `wt new <slug> [branche] [--set k=v]` | checkout + dossiers + copies + hooks `post_new` |
+| `wt new <slug> [branche] [--from ref] [--set k=v]` | checkout + dossiers + copies + hooks `post_new` |
 | `wt up <slug> [--set k=v]` | hooks `up` (et allocation des ports, s'il y en a) |
 | `wt down <slug>` | hooks `down` — le checkout et l'état sont conservés |
 | `wt ls` / `wt show <slug>` | état des worktrees |
@@ -144,6 +145,37 @@ retrouve sa sélection de texte native, le temps de copier une ligne.
 Le pied de page, le menu d'actions et l'aide n'affichent que ce que le `wt.toml`
 déclare : sans `[hooks] up`, pas de « démarrer » ; sans `[open] url`, pas de
 « navigateur ».
+
+### Créer un worktree
+
+`n` — ou « créer un worktree » dans le menu d'actions — enchaîne trois questions : **quelle
+branche** (une existante, ou `＋ nouvelle branche`) ; pour une nouvelle, **d'où elle
+part** — `dev`, `master`, la branche d'une collègue… — celle en checkout dans le dépôt
+principal étant présélectionnée et marquée `●` ; puis le **slug** du worktree. Les
+questions du `wt.toml` viennent ensuite, s'il y en a.
+
+En ligne de commande, c'est `wt new <slug> [branche] --from <ref>`. `--from` accepte tout
+ce que git accepte comme point de départ (branche locale, `origin/dev`, un tag, un
+commit) et ne s'applique qu'à une branche **qui n'existe pas encore** : une branche déjà
+écrite a son histoire, et wt refuse plutôt que de créer autre chose que ce qui est
+demandé.
+
+### Recherche dans les sélecteurs
+
+Tout sélecteur — branches, tâches, éditeurs, adresses, et les questions du `wt.toml` —
+**se filtre à la frappe**, à la manière de `fzf` : tape `acme` et les trois cents
+tenants deviennent trois. Les lettres n'ont pas à se suivre (`fab` trouve
+`feature/acme-billing`), la casse est ignorée, et **l'espace affine** au lieu de
+chercher : `acme prod` ne garde que ce qui contient les deux. La recherche porte sur les
+deux colonnes affichées, libellé et détail.
+
+Les résultats sont classés par pertinence — un mot entier avant des lettres éparpillées,
+un début de mot avant un milieu de mot — et les caractères trouvés sont surlignés. Le
+compteur en bas à droite indique ce qui reste.
+
+Comme la frappe alimente la recherche, la navigation se fait aux flèches ou avec
+`^N`/`^P` (`^J`/`^K`), `TAB` coche dans un choix multiple, `^U` efface la recherche, et
+`ÉCHAP` l'efface d'abord, puis ferme le sélecteur.
 
 ### Sortie des actions
 
@@ -275,7 +307,7 @@ options = [
 
 [[prompt]]
 name = "tenants"
-type = "multi"                            # ESPACE coche, ENTRÉE valide
+type = "multi"                            # TAB coche, ENTRÉE valide
 separator = ","                           # jointure des valeurs cochées (défaut)
 when = "test \"$WT_OPT_DB\" = isolated"   # posée seulement si la commande renvoie 0
 source = "mon-script --liste"             # une ligne par choix : valeur<TAB>libellé<TAB>détail

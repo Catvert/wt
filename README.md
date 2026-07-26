@@ -105,6 +105,7 @@ cd my-project
 wt init                 # a wt.toml with no services; --preset web for a port + URL
 $EDITOR wt.toml
 wt new demo             # creates ../my-project-wt/demo on branch wt/demo
+wt new fix --from dev   # same, but the branch starts at dev
 wt                      # interactive interface
 ```
 
@@ -114,7 +115,7 @@ wt                      # interactive interface
 |---|---|
 | `wt` | interactive interface (list, preview, actions) |
 | `wt init [--preset plain\|web] [--force]` | writes an example `wt.toml` |
-| `wt new <slug> [branch] [--set k=v]` | checkout + directories + copies + `post_new` hooks |
+| `wt new <slug> [branch] [--from ref] [--set k=v]` | checkout + directories + copies + `post_new` hooks |
 | `wt up <slug> [--set k=v]` | `up` hooks (and port allocation, if any) |
 | `wt down <slug>` | `down` hooks — the checkout and state are kept |
 | `wt ls` / `wt show <slug>` | worktree state |
@@ -141,6 +142,35 @@ long enough to copy a line.
 
 The footer, the action menu and the help only show what the `wt.toml` declares: without
 `[hooks] up`, no "start"; without `[open] url`, no "browser".
+
+### Creating a worktree
+
+`n` — or "create a worktree" in the action menu — asks three questions in a row: **which
+branch** (an existing one, or `＋ new branch`); for a new one, **where it starts from** —
+`dev`, `master`, a colleague's branch… — with the main repository's checked-out branch
+preselected and marked `●`; then the worktree's **slug**. The `wt.toml` questions, if
+any, come next.
+
+On the command line that is `wt new <slug> [branch] --from <ref>`. `--from` takes
+anything git takes as a start point (a local branch, `origin/dev`, a tag, a commit) and
+only applies to a branch that **does not exist yet**: a branch already written has its
+own history, and wt refuses rather than create something else than what was asked.
+
+### Searching a picker
+
+Every picker — branches, tasks, editors, addresses, and the `wt.toml` questions —
+**filters as you type**, the way `fzf` does: type `acme` and three hundred tenants
+become three. The letters need not be adjacent (`fab` finds `feature/acme-billing`),
+case is ignored, and **a space narrows** rather than searching: `acme prod` keeps only
+what contains both. The search covers both displayed columns, label and detail.
+
+Results are ranked by relevance — a whole word before scattered letters, the start of a
+word before its middle — and the matched characters are highlighted. The counter at the
+bottom right shows what is left.
+
+Since typing feeds the search, moving around is done with the arrows or with `^N`/`^P`
+(`^J`/`^K`), `TAB` ticks a box in a multiple choice, `^U` clears the search, and `ESC`
+clears it first, then closes the picker.
 
 ### Action output
 
@@ -269,7 +299,7 @@ options = [
 
 [[prompt]]
 name = "tenants"
-type = "multi"                            # SPACE toggles, ENTER confirms
+type = "multi"                            # TAB toggles, ENTER confirms
 separator = ","                           # how checked values are joined (default)
 when = "test \"$WT_OPT_DB\" = isolated"   # only asked when the command exits 0
 source = "my-script --list"               # one line per choice: value<TAB>label<TAB>detail

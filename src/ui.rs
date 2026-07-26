@@ -91,6 +91,134 @@ struct Choice {
     checked: bool,
 }
 
+/// One row of a picker's filtered view.
+struct Hit {
+    /// Index of the choice in `Picker::items`.
+    idx: usize,
+    score: i32,
+    /// Character positions the filter matched, in the label and in the detail — what
+    /// the interface highlights.
+    label: Vec<usize>,
+    detail: Vec<usize>,
+}
+
+/// A picker: every choice, plus the fzf-style filter narrowing it down.
+///
+/// A list of tenants or of branches is long enough that scrolling to the right row is
+/// the slow part; typing is what makes it quick.
+struct Picker {
+    title: String,
+    items: Vec<Choice>,
+    /// What the filter leaves, in display order. Rebuilt on every keystroke.
+    view: Vec<Hit>,
+    /// Row of `view` under the cursor.
+    sel: usize,
+    kind: PickKind,
+    /// Multiple selection: TAB toggles, ENTER confirms the set.
+    multi: bool,
+    filter: String,
+}
+
+impl Picker {
+    fn new(title: String, items: Vec<Choice>, kind: PickKind, multi: bool) -> Self {
+        let mut p = Picker {
+            title,
+            items,
+            view: Vec::new(),
+            sel: 0,
+            kind,
+            multi,
+            filter: String::new(),
+        };
+        p.refilter();
+        p
+    }
+
+    /// Rebuilds the view from the filter.
+    ///
+    /// The query runs against what is displayed — label *and* detail joined — so
+    /// `acme prod` finds the tenant whose environment only shows in the second column.
+    fn refilter(&mut self) {
+        if self.filter.trim().is_empty() {
+            self.view = (0..self.items.len())
+                .map(|idx| Hit {
+                    idx,
+                    score: 0,
+                    label: Vec::new(),
+                    detail: Vec::new(),
+                })
+                .collect();
+        } else {
+            self.view = self
+                .items
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, c)| {
+                    let cut = c.label.chars().count();
+                    let hay = format!("{} {}", c.label, c.detail);
+                    let m = crate::fuzzy::matches(&self.filter, &hay)?;
+                    // Split the positions back over the two columns; the separator we
+                    // joined with sits at `cut` and belongs to neither.
+                    Some(Hit {
+                        idx,
+                        score: m.score,
+                        label: m.positions.iter().copied().filter(|p| *p < cut).collect(),
+                        detail: m
+                            .positions
+                            .iter()
+                            .filter(|p| **p > cut)
+                            .map(|p| p - cut - 1)
+                            .collect(),
+                    })
+                })
+                .collect();
+            // Best score first; on a tie the earliest match, then the declared order —
+            // `acme-prod` before `prod-acme` for the query `acme`.
+            self.view.sort_by_key(|h| {
+                let first = h.label.first().or(h.detail.first()).copied().unwrap_or(0);
+                (-h.score, first, h.idx)
+            });
+        }
+
+        // Back to the top: after a keystroke the best match is the one the user is
+        // after, and ENTER must never confirm a row that scrolled out of the query.
+        self.sel = 0;
+    }
+
+    fn current_index(&self) -> Option<usize> {
+        self.view.get(self.sel).map(|h| h.idx)
+    }
+
+    /// Puts the cursor on a given choice (a question's `default`).
+    fn select(&mut self, idx: usize) {
+        if let Some(row) = self.view.iter().position(|h| h.idx == idx) {
+            self.sel = row;
+        }
+    }
+
+    fn move_by(&mut self, delta: isize) {
+        if self.view.is_empty() {
+            return;
+        }
+        let last = self.view.len() - 1;
+        self.sel = (self.sel as isize + delta).clamp(0, last as isize) as usize;
+    }
+
+    fn toggle(&mut self) {
+        if !self.multi {
+            return;
+        }
+        if let Some(idx) = self.current_index() {
+            self.items[idx].checked = !self.items[idx].checked;
+        }
+    }
+
+    fn edit_filter(&mut self, f: impl FnOnce(&mut String)) {
+        f(&mut self.filter);
+        self.refilter();
+    }
+}
+
 /// Action deferred while the wt.toml questions are asked.
 struct Pending {
     action: PendingAction,
@@ -101,7 +229,10 @@ struct Pending {
 }
 
 enum PendingAction {
-    New { branch: Option<String> },
+    New {
+        branch: Option<String>,
+        from: Option<String>,
+    },
     Up,
 }
 
@@ -109,14 +240,7 @@ enum Mode {
     List,
     Help,
     /// Generic picker (branch, task, editor, action, prompt answer).
-    Pick {
-        title: String,
-        items: Vec<Choice>,
-        sel: usize,
-        kind: PickKind,
-        /// Multiple selection: SPACE toggles, ENTER confirms the set.
-        multi: bool,
-    },
+    Pick(Picker),
     Input {
         title: String,
         buffer: String,
@@ -142,7 +266,7 @@ impl Mode {
         match self {
             Mode::List => ModeKind::List,
             Mode::Help => ModeKind::Help,
-            Mode::Pick { .. } => ModeKind::Pick,
+            Mode::Pick(_) => ModeKind::Pick,
             Mode::Input { .. } => ModeKind::Input,
             Mode::Confirm { .. } => ModeKind::Confirm,
         }
@@ -160,6 +284,8 @@ enum ConfirmAction {
 
 enum PickKind {
     Branch,
+    /// Where a branch about to be created starts from.
+    BranchBase,
     Task,
     Editor,
     Action,
@@ -173,8 +299,12 @@ enum PickKind {
 }
 
 enum InputKind {
-    /// Slug of a new worktree; the branch has already been picked.
-    Slug { branch: Option<String> },
+    /// Slug of a new worktree; the branch — or, for a new one, what it starts from —
+    /// has already been picked.
+    Slug {
+        branch: Option<String>,
+        from: Option<String>,
+    },
     /// `key=value` options for a start.
     Opts { slug: String },
     /// Free-form answer to a wt.toml question.
@@ -378,47 +508,30 @@ impl Ui {
 
     fn on_mouse_pick(&mut self, m: MouseEvent, term: &mut DefaultTerminal) -> Result<()> {
         let (x, y) = (m.column, m.row);
-        let len = match &self.mode {
-            Mode::Pick { items, .. } => items.len(),
-            _ => return Ok(()),
+        let Mode::Pick(p) = &mut self.mode else {
+            return Ok(());
         };
         match m.kind {
-            MouseEventKind::ScrollDown => {
-                if let Mode::Pick { sel, .. } = &mut self.mode {
-                    if *sel + 1 < len {
-                        *sel += 1;
-                    }
-                }
-            }
-            MouseEventKind::ScrollUp => {
-                if let Mode::Pick { sel, .. } = &mut self.mode {
-                    *sel = sel.saturating_sub(1);
-                }
-            }
+            MouseEventKind::ScrollDown => p.move_by(1),
+            MouseEventKind::ScrollUp => p.move_by(-1),
             MouseEventKind::Down(MouseButton::Left) => {
                 if !Self::in_zone(self.zones.popup, x, y) {
                     return Ok(());
                 }
-                let Some(idx) = Self::row_at(self.zones.popup, &self.pick_state, y) else {
+                let Some(row) = Self::row_at(self.zones.popup, &self.pick_state, y) else {
                     return Ok(());
                 };
-                if idx >= len {
+                if row >= p.view.len() {
                     return Ok(());
                 }
-                let double = self.is_double_click(x, y);
-                let multi = matches!(self.mode, Mode::Pick { multi: true, .. });
-                if let Mode::Pick { sel, items, .. } = &mut self.mode {
-                    *sel = idx;
-                    // In multiple selection a click toggles: that is the expected
-                    // gesture, and nothing is confirmed until you are done.
-                    if multi {
-                        if let Some(c) = items.get_mut(idx) {
-                            c.checked = !c.checked;
-                        }
-                        return Ok(());
-                    }
+                p.sel = row;
+                // In multiple selection a click toggles: that is the expected gesture,
+                // and nothing is confirmed until you are done.
+                if p.multi {
+                    p.toggle();
+                    return Ok(());
                 }
-                if double {
+                if self.is_double_click(x, y) {
                     self.submit_pick(term)?;
                 }
             }
@@ -591,7 +704,7 @@ impl Ui {
 
         match &self.mode {
             Mode::Help => self.draw_help(f),
-            Mode::Pick { .. } => self.draw_pick(f),
+            Mode::Pick(_) => self.draw_pick(f),
             Mode::Input { title, buffer, .. } => {
                 let (title, buffer) = (title.clone(), buffer.clone());
                 self.draw_input(f, &title, &buffer);
@@ -750,6 +863,8 @@ impl Ui {
             t!("help.mouse").to_string(),
             t!("help.actions").to_string(),
             String::new(),
+            t!("help.picker").to_string(),
+            String::new(),
             t!("help.panel").to_string(),
             t!("help.interactive").to_string(),
             String::new(),
@@ -782,21 +897,18 @@ impl Ui {
     }
 
     fn draw_pick(&mut self, f: &mut Frame) {
-        let Mode::Pick {
-            title,
-            items,
-            sel,
-            multi,
-            ..
-        } = &self.mode
-        else {
+        let Mode::Pick(p) = &self.mode else {
             return;
         };
-        let (title, sel, multi) = (title.clone(), *sel, *multi);
+        let (title, multi, filter) = (p.title.clone(), p.multi, p.filter.clone());
+        let (shown, total) = (p.view.len(), p.items.len());
+        let sel = (!p.view.is_empty()).then_some(p.sel);
 
-        let list: Vec<ListItem> = items
+        let list: Vec<ListItem> = p
+            .view
             .iter()
-            .map(|c| {
+            .map(|hit| {
+                let c = &p.items[hit.idx];
                 let style = if c.disabled {
                     Style::default().fg(Color::DarkGray)
                 } else {
@@ -813,33 +925,66 @@ impl Ui {
                         }),
                     ));
                 }
-                spans.push(Span::styled(
-                    format!("{:<34}", truncate(&c.label, 34)),
-                    style,
-                ));
-                spans.push(Span::styled(
-                    truncate(&c.detail, 40),
+                spans.extend(cell(&c.label, &hit.label, style, 34, true));
+                spans.extend(cell(
+                    &c.detail,
+                    &hit.detail,
                     Style::default().fg(Color::DarkGray),
+                    40,
+                    false,
                 ));
                 ListItem::new(Line::from(spans))
             })
             .collect();
 
+        // A filter that matches nothing: say so, rather than leave an empty frame that
+        // reads like a bug.
+        let list = if list.is_empty() && !filter.is_empty() {
+            vec![ListItem::new(Line::from(Span::styled(
+                format!("  {}", t!("ui.no_match")),
+                Style::default().fg(Color::DarkGray),
+            )))]
+        } else {
+            list
+        };
+
         let area = centered(f.area(), 80, 70);
         self.zones.popup = area;
-        self.pick_state.select(Some(sel));
+        self.pick_state.select(sel);
         f.render_widget(Clear, area);
         let hint = if multi {
             format!(" — {} ", t!("ui.multi_hint"))
         } else {
             " ".to_string()
         };
+        // The query sits at the bottom, fzf-style: the list stays where the eye is.
+        let prompt = Line::from(vec![
+            Span::styled(" › ", Style::default().fg(Color::Cyan)),
+            Span::styled(
+                filter.clone(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("▏", Style::default().fg(Color::DarkGray)),
+        ]);
+        let count = Line::from(Span::styled(
+            if filter.is_empty() {
+                format!(" {total} ")
+            } else {
+                format!(" {shown}/{total} ")
+            },
+            Style::default().fg(Color::DarkGray),
+        ))
+        .right_aligned();
         f.render_stateful_widget(
             List::new(list)
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .title(format!(" {title}{hint}")),
+                        .title(format!(" {title}{hint}"))
+                        .title_bottom(prompt)
+                        .title_bottom(count),
                 )
                 .highlight_style(Style::default().bg(Color::DarkGray))
                 .highlight_symbol("▸"),
@@ -947,53 +1092,62 @@ impl Ui {
                 }
                 Ok(())
             }
-            ModeKind::Pick => {
-                match key.code {
-                    KeyCode::Esc | KeyCode::Char('q') => {
-                        // Giving up on a question means giving up on the action: running
-                        // it with half-collected answers would be worse than nothing.
-                        if matches!(
-                            &self.mode,
-                            Mode::Pick {
-                                kind: PickKind::Prompt { .. },
-                                ..
-                            }
-                        ) {
-                            self.pending = None;
-                            self.message = Some(t!("ui.cancelled").to_string());
-                        }
-                        self.mode = Mode::List;
-                    }
-                    KeyCode::Char(' ') => {
-                        if let Mode::Pick {
-                            items, sel, multi, ..
-                        } = &mut self.mode
-                        {
-                            if *multi {
-                                if let Some(c) = items.get_mut(*sel) {
-                                    c.checked = !c.checked;
-                                }
-                            }
-                        }
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        if let Mode::Pick { items, sel, .. } = &mut self.mode {
-                            if *sel + 1 < items.len() {
-                                *sel += 1;
-                            }
-                        }
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        if let Mode::Pick { sel, .. } = &mut self.mode {
-                            *sel = sel.saturating_sub(1);
-                        }
-                    }
-                    KeyCode::Enter => return self.submit_pick(term),
-                    _ => {}
-                }
-                Ok(())
-            }
+            ModeKind::Pick => self.on_key_pick(key, term),
         }
+    }
+
+    /// Keyboard in a picker.
+    ///
+    /// Every printable key feeds the filter — a picker is a search box first, the way
+    /// fzf is. Navigation therefore lives on the arrows and on the readline-style
+    /// controls (`^N`/`^P`, `^J`/`^K`), and TAB is what ticks a box in a multiple
+    /// selection.
+    fn on_key_pick(&mut self, key: KeyEvent, term: &mut DefaultTerminal) -> Result<()> {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
+        let Mode::Pick(p) = &mut self.mode else {
+            return Ok(());
+        };
+        match key.code {
+            KeyCode::Enter => return self.submit_pick(term),
+            KeyCode::Tab | KeyCode::BackTab => p.toggle(),
+            KeyCode::Down => p.move_by(1),
+            KeyCode::Up => p.move_by(-1),
+            KeyCode::PageDown => p.move_by(10),
+            KeyCode::PageUp => p.move_by(-10),
+            KeyCode::Char('n' | 'j') if ctrl => p.move_by(1),
+            KeyCode::Char('p' | 'k') if ctrl => p.move_by(-1),
+            KeyCode::Char('u') if ctrl => p.edit_filter(|f| f.clear()),
+            KeyCode::Char('w') if ctrl => p.edit_filter(drop_last_word),
+            KeyCode::Backspace => p.edit_filter(|f| {
+                f.pop();
+            }),
+            // ESC clears the query first: a search that went too far is corrected
+            // without losing the menu.
+            KeyCode::Esc if !p.filter.is_empty() => p.edit_filter(|f| f.clear()),
+            KeyCode::Esc => self.cancel_pick(),
+            KeyCode::Char('c') if ctrl => self.cancel_pick(),
+            KeyCode::Char(c) if !ctrl && !alt => p.edit_filter(|f| f.push(c)),
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Closes a picker without choosing.
+    fn cancel_pick(&mut self) {
+        // Giving up on a question means giving up on the action: running it with
+        // half-collected answers would be worse than nothing.
+        if matches!(
+            &self.mode,
+            Mode::Pick(Picker {
+                kind: PickKind::Prompt { .. },
+                ..
+            })
+        ) {
+            self.pending = None;
+            self.message = Some(t!("ui.cancelled").to_string());
+        }
+        self.mode = Mode::List;
     }
 
     /// Keyboard while the output panel is up: scrolling, and closing once the action is
@@ -1171,7 +1325,7 @@ impl Ui {
             .collect();
         let slug = pending.slug;
         match pending.action {
-            PendingAction::New { branch } => {
+            PendingAction::New { branch, from } => {
                 let title = t!("title.creating", slug = slug).to_string();
                 // Creating a worktree is almost always about using it: offer to chain —
                 // but only if the project has something to start.
@@ -1182,7 +1336,7 @@ impl Ui {
                     )
                 });
                 self.spawn_then(title, follow, move |app| {
-                    app.cmd_new(&slug, branch.as_deref(), &sets)
+                    app.cmd_new(&slug, branch.as_deref(), from.as_deref(), &sets)
                 });
             }
             PendingAction::Up => {
@@ -1250,19 +1404,21 @@ impl Ui {
         let sel = items
             .iter()
             .position(|c| preset.contains(&c.key))
-            .filter(|_| !multi)
-            .unwrap_or(0);
+            .filter(|_| !multi);
 
-        self.mode = Mode::Pick {
-            title: prompt.title().to_string(),
+        let mut picker = Picker::new(
+            prompt.title().to_string(),
             items,
-            sel,
-            kind: PickKind::Prompt {
+            PickKind::Prompt {
                 name: prompt.name.clone(),
                 separator: prompt.separator.clone(),
             },
             multi,
-        };
+        );
+        if let Some(sel) = sel {
+            picker.select(sel);
+        }
+        self.mode = Mode::Pick(picker);
     }
 
     /// The menu only lists what the wt.toml declared: offering "start" to a project
@@ -1292,17 +1448,20 @@ impl Ui {
             &t!("action.remove"),
             &t!("action.remove_detail"),
         ));
-        self.mode = Mode::Pick {
-            title: t!("ui.actions").to_string(),
+        self.mode = Mode::Pick(Picker::new(
+            t!("ui.actions").to_string(),
             items,
-            sel: 0,
-            kind: PickKind::Action,
-            multi: false,
-        };
+            PickKind::Action,
+            false,
+        ));
     }
 
     fn open_branch_picker(&mut self) {
-        let mut items = vec![choice("__new__", &t!("ui.new_branch"), &t!("ui.from_head"))];
+        let mut items = vec![choice(
+            "__new__",
+            &t!("ui.new_branch"),
+            &t!("ui.new_branch_hint"),
+        )];
         for b in crate::git::branches(&self.app.project.main) {
             let used = b.used_by.is_some();
             items.push(Choice {
@@ -1321,12 +1480,80 @@ impl Ui {
                 checked: false,
             });
         }
-        self.mode = Mode::Pick {
-            title: t!("ui.branch_title").to_string(),
+        self.mode = Mode::Pick(Picker::new(
+            t!("ui.branch_title").to_string(),
             items,
-            sel: 0,
-            kind: PickKind::Branch,
-            multi: false,
+            PickKind::Branch,
+            false,
+        ));
+    }
+
+    /// Where the branch about to be created starts.
+    ///
+    /// A worktree is rarely branched off whatever the main repository happens to have
+    /// checked out: the question is `dev`, `master`, or the feature branch this one
+    /// extends. A branch already checked out elsewhere is a perfectly good start point,
+    /// so nothing is greyed out here.
+    fn open_base_picker(&mut self) {
+        let head = crate::git::current_branch(&self.app.project.main);
+        let items: Vec<Choice> = crate::git::branches(&self.app.project.main)
+            .into_iter()
+            .map(|b| {
+                let current = b.name == head;
+                Choice {
+                    label: if current {
+                        format!("● {}", b.name)
+                    } else {
+                        format!("  {}", b.name)
+                    },
+                    // The marker stays short: the date and the subject are what tell
+                    // two candidate bases apart.
+                    detail: if current {
+                        format!("{} · {} · {}", t!("ui.head_here"), b.date, b.subject)
+                    } else {
+                        format!("{} · {}", b.date, b.subject)
+                    },
+                    key: b.name,
+                    disabled: false,
+                    checked: false,
+                }
+            })
+            .collect();
+
+        // A repository without a single commit has no branch to offer: HEAD is the only
+        // possible start point, and asking would be a dead end.
+        if items.is_empty() {
+            self.ask_slug(None, None);
+            return;
+        }
+
+        let mut picker = Picker::new(
+            t!("ui.base_title").to_string(),
+            items,
+            PickKind::BranchBase,
+            false,
+        );
+        if let Some(idx) = picker.items.iter().position(|c| c.key == head) {
+            picker.select(idx);
+        }
+        self.mode = Mode::Pick(picker);
+    }
+
+    /// Last step of a creation: the slug, suggested from the branch when there is one.
+    fn ask_slug(&mut self, branch: Option<String>, from: Option<String>) {
+        let title = match (&branch, &from) {
+            (Some(b), _) => t!("ui.slug_for", branch = b).to_string(),
+            (None, Some(f)) => t!("ui.slug_from", base = f).to_string(),
+            (None, None) => t!("ui.slug_title").to_string(),
+        };
+        let buffer = match &branch {
+            Some(b) => ops::slugify(b.trim_start_matches("origin/")),
+            None => String::new(),
+        };
+        self.mode = Mode::Input {
+            title,
+            buffer,
+            kind: InputKind::Slug { branch, from },
         };
     }
 
@@ -1347,13 +1574,12 @@ impl Ui {
             self.message = Some(t!("ui.no_tasks").to_string());
             return;
         }
-        self.mode = Mode::Pick {
-            title: t!("ui.task").to_string(),
+        self.mode = Mode::Pick(Picker::new(
+            t!("ui.task").to_string(),
             items,
-            sel: 0,
-            kind: PickKind::Task,
-            multi: false,
-        };
+            PickKind::Task,
+            false,
+        ));
     }
 
     /// A single address: open it. Several (application plus one tenant per mounted
@@ -1373,13 +1599,12 @@ impl Ui {
                     .iter()
                     .map(|l| choice(&l.url, &l.label, &l.url))
                     .collect();
-                self.mode = Mode::Pick {
-                    title: t!("ui.open_title", slug = slug).to_string(),
+                self.mode = Mode::Pick(Picker::new(
+                    t!("ui.open_title", slug = slug).to_string(),
                     items,
-                    sel: 0,
-                    kind: PickKind::OpenLink,
-                    multi: false,
-                };
+                    PickKind::OpenLink,
+                    false,
+                ));
             }
         }
     }
@@ -1394,29 +1619,33 @@ impl Ui {
             return;
         }
         let items: Vec<Choice> = editors.iter().map(|e| choice(e, e, "")).collect();
-        self.mode = Mode::Pick {
-            title: t!("ui.editor").to_string(),
+        self.mode = Mode::Pick(Picker::new(
+            t!("ui.editor").to_string(),
             items,
-            sel: 0,
-            kind: PickKind::Editor,
-            multi: false,
-        };
+            PickKind::Editor,
+            false,
+        ));
     }
 
     fn submit_pick(&mut self, term: &mut DefaultTerminal) -> Result<()> {
-        let Mode::Pick {
-            items,
-            sel,
-            kind,
-            multi,
-            ..
-        } = std::mem::replace(&mut self.mode, Mode::List)
-        else {
+        let Mode::Pick(p) = &self.mode else {
             return Ok(());
         };
+        // Nothing under the cursor — a filter that matches nothing. ENTER has nothing to
+        // confirm and must not close the menu, unless boxes are already ticked.
+        if p.current_index().is_none() && !(p.multi && matches!(p.kind, PickKind::Prompt { .. })) {
+            return Ok(());
+        }
+        let Mode::Pick(p) = std::mem::replace(&mut self.mode, Mode::List) else {
+            return Ok(());
+        };
+        let picked_index = p.current_index();
+        let Picker {
+            items, kind, multi, ..
+        } = p;
 
         // Answer to a project question: in multi mode the checked boxes are what count,
-        // not the hovered row.
+        // not the hovered row — including those ticked under an earlier filter.
         if let PickKind::Prompt { name, separator } = &kind {
             let value = if multi {
                 items
@@ -1426,7 +1655,7 @@ impl Ui {
                     .collect::<Vec<_>>()
                     .join(separator)
             } else {
-                match items.get(sel) {
+                match picked_index.and_then(|i| items.get(i)) {
                     Some(c) => c.key.clone(),
                     None => String::new(),
                 }
@@ -1435,7 +1664,7 @@ impl Ui {
             return self.advance(term);
         }
 
-        let Some(picked) = items.into_iter().nth(sel) else {
+        let Some(picked) = picked_index.and_then(|i| items.into_iter().nth(i)) else {
             return Ok(());
         };
         if picked.disabled {
@@ -1444,22 +1673,11 @@ impl Ui {
         }
         let slug = self.current().map(|r| r.slug.clone());
         match kind {
-            PickKind::Branch => {
-                let (title, branch, default) = if picked.key == "__new__" {
-                    (t!("ui.slug_title").to_string(), None, String::new())
-                } else {
-                    (
-                        t!("ui.slug_for", branch = picked.key).to_string(),
-                        Some(picked.key.clone()),
-                        ops::slugify(picked.key.trim_start_matches("origin/")),
-                    )
-                };
-                self.mode = Mode::Input {
-                    title,
-                    buffer: default,
-                    kind: InputKind::Slug { branch },
-                };
-            }
+            // A branch that exists is its own start point; a new one still has to be
+            // told where it begins.
+            PickKind::Branch if picked.key == "__new__" => self.open_base_picker(),
+            PickKind::Branch => self.ask_slug(Some(picked.key), None),
+            PickKind::BranchBase => self.ask_slug(None, Some(picked.key)),
             PickKind::Task => {
                 if let Some(s) = slug {
                     let task = picked.key;
@@ -1549,13 +1767,13 @@ impl Ui {
             return Ok(());
         };
         match kind {
-            InputKind::Slug { branch } => {
+            InputKind::Slug { branch, from } => {
                 let slug = buffer.trim().to_string();
                 if slug.is_empty() {
                     self.message = Some(t!("ui.empty_slug").to_string());
                     return Ok(());
                 }
-                self.start(PendingAction::New { branch }, slug, term)?;
+                self.start(PendingAction::New { branch, from }, slug, term)?;
             }
             InputKind::Opts { slug } => {
                 let sets: Vec<String> = buffer.split_whitespace().map(|s| s.to_string()).collect();
@@ -1687,6 +1905,66 @@ fn choice(key: &str, label: &str, detail: &str) -> Choice {
     }
 }
 
+/// Drops the last word of a search, `^W`-style.
+///
+/// The cut lands on a character boundary, not a byte one: a non-breaking space —
+/// AltGr+space on an AZERTY keyboard — is two bytes wide, and `truncate` panics in the
+/// middle of one.
+fn drop_last_word(query: &mut String) {
+    let kept = query
+        .trim_end()
+        .char_indices()
+        .rev()
+        .find(|(_, c)| c.is_whitespace())
+        .map_or(0, |(i, c)| i + c.len_utf8());
+    query.truncate(kept);
+}
+
+/// Spans for one column of a picker row, with what the filter matched picked out.
+///
+/// The text is truncated to `width` characters, and padded to it when `pad` is set so
+/// the next column lines up. Positions past the cut are simply not highlighted.
+fn cell(text: &str, hits: &[usize], base: Style, width: usize, pad: bool) -> Vec<Span<'static>> {
+    let matched = base
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+    let chars: Vec<char> = text.chars().collect();
+    let cut = chars.len() > width;
+    let keep = if cut {
+        width.saturating_sub(1)
+    } else {
+        width.min(chars.len())
+    };
+
+    let mut spans = Vec::new();
+    let mut run = String::new();
+    let mut on = false;
+    for (i, c) in chars.iter().take(keep).enumerate() {
+        let hit = hits.contains(&i);
+        if hit != on {
+            if !run.is_empty() {
+                spans.push(Span::styled(
+                    std::mem::take(&mut run),
+                    if on { matched } else { base },
+                ));
+            }
+            on = hit;
+        }
+        run.push(*c);
+    }
+    if !run.is_empty() {
+        spans.push(Span::styled(run, if on { matched } else { base }));
+    }
+    if cut {
+        spans.push(Span::styled("…", base));
+    }
+    if pad {
+        let shown = if cut { keep + 1 } else { keep };
+        spans.push(Span::styled(" ".repeat(width.saturating_sub(shown)), base));
+    }
+    spans
+}
+
 fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();
@@ -1709,4 +1987,129 @@ fn centered(area: Rect, pct_x: u16, pct_y: u16) -> Rect {
         Constraint::Percentage((100 - pct_x) / 2),
     ])
     .split(v[1])[1]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn picker(items: &[(&str, &str)], multi: bool) -> Picker {
+        let items = items
+            .iter()
+            .map(|(label, detail)| choice(label, label, detail))
+            .collect();
+        Picker::new(String::new(), items, PickKind::Action, multi)
+    }
+
+    fn labels(p: &Picker) -> Vec<&str> {
+        p.view
+            .iter()
+            .map(|h| p.items[h.idx].label.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn an_empty_filter_keeps_the_declared_order() {
+        let p = picker(&[("zeta", ""), ("alpha", "")], false);
+        assert_eq!(labels(&p), ["zeta", "alpha"]);
+    }
+
+    #[test]
+    fn filtering_narrows_and_ranks() {
+        let mut p = picker(
+            &[("prod-acme", ""), ("staging", ""), ("acme-prod", "")],
+            false,
+        );
+        p.edit_filter(|f| f.push_str("acme"));
+        // Both survive; the one whose match starts earliest leads.
+        assert_eq!(labels(&p), ["acme-prod", "prod-acme"]);
+    }
+
+    #[test]
+    fn the_filter_reaches_the_detail_column() {
+        let mut p = picker(&[("acme", "production"), ("globex", "staging")], false);
+        p.edit_filter(|f| f.push_str("acme prod"));
+        assert_eq!(labels(&p), ["acme"]);
+        // The detail's positions are relative to the detail, not to the joined line.
+        assert_eq!(p.view[0].detail, [0, 1, 2, 3]);
+        assert_eq!(p.view[0].label, [0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn the_cursor_goes_back_to_the_best_match() {
+        let mut p = picker(&[("alpha", ""), ("beta", ""), ("gamma", "")], false);
+        p.sel = 2;
+        // Typing aims at the top of the list: ENTER must not confirm the row the
+        // cursor happened to sit on before the query.
+        p.edit_filter(|f| f.push('a'));
+        assert_eq!(p.current_index(), Some(0));
+    }
+
+    #[test]
+    fn a_filter_that_matches_nothing_leaves_no_selection() {
+        let mut p = picker(&[("alpha", "")], false);
+        p.edit_filter(|f| f.push_str("zzz"));
+        assert!(p.view.is_empty());
+        assert_eq!(p.current_index(), None);
+        p.move_by(1);
+        assert_eq!(p.current_index(), None);
+    }
+
+    #[test]
+    fn ticked_boxes_survive_the_filter() {
+        let mut p = picker(&[("acme", ""), ("globex", "")], true);
+        p.toggle();
+        p.edit_filter(|f| f.push_str("globex"));
+        p.toggle();
+        p.edit_filter(|f| f.clear());
+        assert!(p.items.iter().all(|c| c.checked));
+    }
+
+    #[test]
+    fn navigation_stays_inside_the_view() {
+        let mut p = picker(&[("a", ""), ("b", ""), ("c", "")], false);
+        p.move_by(-1);
+        assert_eq!(p.sel, 0);
+        p.move_by(10);
+        assert_eq!(p.sel, 2);
+    }
+
+    #[test]
+    fn a_cell_highlights_what_matched() {
+        let base = Style::default();
+        let spans = cell("acme", &[0, 1], base, 4, false);
+        let rendered: Vec<&str> = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(rendered, ["ac", "me"]);
+        assert!(spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
+        assert!(!spans[1].style.add_modifier.contains(Modifier::UNDERLINED));
+    }
+
+    #[test]
+    fn a_cell_truncates_and_pads_to_its_column() {
+        let base = Style::default();
+        let width = |spans: Vec<Span>| {
+            spans
+                .iter()
+                .map(|s| s.content.chars().count())
+                .sum::<usize>()
+        };
+        assert_eq!(width(cell("acme", &[], base, 10, true)), 10);
+        assert_eq!(width(cell("acme", &[], base, 10, false)), 4);
+        assert_eq!(width(cell("acme-production", &[], base, 6, true)), 6);
+    }
+
+    #[test]
+    fn deleting_a_word_cuts_on_a_character_boundary() {
+        let mut f = String::from("acme prod");
+        drop_last_word(&mut f);
+        assert_eq!(f, "acme ");
+        drop_last_word(&mut f);
+        assert_eq!(f, "");
+        drop_last_word(&mut f);
+        assert_eq!(f, "");
+        // A non-breaking space is two bytes wide: cutting on a byte index would panic.
+        let mut f = String::from("acme\u{a0}prod");
+        drop_last_word(&mut f);
+        assert_eq!(f, "acme\u{a0}");
+    }
 }

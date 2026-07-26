@@ -335,7 +335,15 @@ impl App {
     // new
     // --------------------------------------------------------------------------------
 
-    pub fn cmd_new(&self, slug: &str, branch: Option<&str>, sets: &[String]) -> Result<()> {
+    /// `from` is the branch (or tag, or commit) a *new* branch starts from; `None`
+    /// means the main repository's HEAD.
+    pub fn cmd_new(
+        &self,
+        slug: &str,
+        branch: Option<&str>,
+        from: Option<&str>,
+        sets: &[String],
+    ) -> Result<()> {
         validate_slug(slug)?;
         let dir = self.dir(slug);
         if dir.exists() {
@@ -361,8 +369,11 @@ impl App {
         st.branch = branch.clone();
 
         fs::create_dir_all(&self.root)?;
-        self.info(t!("info.creating", branch = branch).to_string());
-        crate::git::worktree_add(&self.project.main, &dir, &branch)?;
+        self.info(match from {
+            Some(f) => t!("info.creating_from", branch = branch, from = f).to_string(),
+            None => t!("info.creating", branch = branch).to_string(),
+        });
+        crate::git::worktree_add(&self.project.main, &dir, &branch, from)?;
         // `git worktree add origin/x` creates a local branch under the short name: we
         // record the one actually checked out.
         st.branch = crate::git::current_branch(&dir);

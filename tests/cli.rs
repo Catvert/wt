@@ -132,6 +132,61 @@ fn full_lifecycle() {
     assert!(stdout(&out).contains("wt/demo"), "the branch was deleted");
 }
 
+/// A new branch does not have to start at whatever the main repository has checked out:
+/// `--from` picks the base, which is what makes a worktree branched off `dev` possible
+/// from a `main` checkout.
+#[test]
+fn a_new_branch_starts_where_it_is_told() {
+    let project = project(BASIC);
+    let dir = project.path();
+    let root = dir
+        .parent()
+        .unwrap()
+        .join(format!("{}-wt", dir.file_name().unwrap().to_string_lossy()));
+
+    // A `dev` branch one commit ahead of `main`.
+    git(dir, &["checkout", "-q", "-b", "dev"]);
+    fs::write(dir.join("only-on-dev.txt"), "dev\n").unwrap();
+    git(dir, &["add", "-A"]);
+    git(dir, &["commit", "-qm", "dev commit"]);
+    git(dir, &["checkout", "-q", "main"]);
+
+    let out = wt(dir)
+        .args(["new", "feat", "--from", "dev"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        root.join("feat").join("only-on-dev.txt").exists(),
+        "the worktree did not start from dev"
+    );
+
+    // Without --from the base is still the main repository's HEAD.
+    wt(dir).args(["new", "plain"]).output().unwrap();
+    assert!(!root.join("plain").join("only-on-dev.txt").exists());
+
+    // A start point cannot rewrite where an existing branch begins: better to say so
+    // than to silently check out something else.
+    let out = wt(dir)
+        .args(["new", "again", "dev", "--from", "main"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("already exists"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    for slug in ["feat", "plain"] {
+        wt(dir).args(["rm", slug, "-y"]).output().unwrap();
+    }
+}
+
 #[test]
 fn init_writes_a_usable_config() {
     let dir = tempfile::tempdir().unwrap();
