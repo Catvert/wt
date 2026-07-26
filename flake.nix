@@ -6,13 +6,11 @@
   # Offered to anyone running `nix run github:Catvert/wt`: prebuilt binaries instead of a
   # local compilation. Nix asks for confirmation unless the user is a trusted-user; the
   # permanent way is the `nix.settings` snippet in the README.
-  #
-  # TODO after creating the cache: replace the key with the one printed by
-  #   cachix use wt          (or read it on https://app.cachix.org/cache/wt)
-  # An empty list simply means "no cache", so this stays harmless until then.
   nixConfig = {
-    extra-substituters = [ "https://wt.cachix.org" ];
-    extra-trusted-public-keys = [ ];
+    extra-substituters = [ "https://catvert.cachix.org" ];
+    extra-trusted-public-keys = [
+      "catvert.cachix.org-1:R5plivdLnx2WtmZkBryZwUF51Uvl6TJldhFGYOcyPXg="
+    ];
   };
 
   outputs = { self, nixpkgs }:

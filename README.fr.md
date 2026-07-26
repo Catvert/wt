@@ -66,13 +66,15 @@ tu es `trusted-user`). Pour l'accepter une bonne fois, sur NixOS :
 ```nix
 {
   nix.settings = {
-    substituters = [ "https://wt.cachix.org" ];
-    trusted-public-keys = [ "wt.cachix.org-1:REMPLACER" ];
+    substituters = [ "https://catvert.cachix.org" ];
+    trusted-public-keys = [
+      "catvert.cachix.org-1:R5plivdLnx2WtmZkBryZwUF51Uvl6TJldhFGYOcyPXg="
+    ];
   };
 }
 ```
 
-Hors NixOS, `cachix use wt` écrit la même chose dans `~/.config/nix/nix.conf`.
+Hors NixOS, `cachix use catvert` écrit la même chose dans `~/.config/nix/nix.conf`.
 
 ### Depuis les sources
 

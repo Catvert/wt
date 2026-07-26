@@ -9,7 +9,7 @@ env:
   CARGO_TERM_COLOR: always
   # A build that warns is a build that will warn on everyone else's machine.
   RUSTFLAGS: -D warnings
-  CACHIX_CACHE: wt
+  CACHIX_CACHE: catvert
 
 jobs:
   check:
