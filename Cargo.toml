@@ -1,0 +1,34 @@
+[package]
+name = "wt"
+version = "0.1.0"
+edition = "2021"
+description = "Git worktree manager driven by a per-project wt.toml, independent of the project's language"
+license = "MIT"
+
+[[bin]]
+name = "wt"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+# Features trimmed to what the interface uses: by default ratatui also builds the
+# calendar widget and its `time` dependency, which we have no use for.
+ratatui = { version = "0.30", default-features = false, features = [
+    "std",
+    "crossterm",
+    "layout-cache",
+    "underline-color",
+] }
+rust-i18n = "4"
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+
+[profile.release]
+strip = true
+lto = true
+
+[dev-dependencies]
+assert_cmd = "2"
+tempfile = "3"

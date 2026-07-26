@@ -1,0 +1,39 @@
+# Example: a Rust library or binary — no services, no ports, no URL.
+#
+# This is the most common case outside the web: a worktree is there to build and test a
+# branch in parallel. Without [hooks] up/down, [ports] or [open], the interface shows no
+# state, no port and no "browser" action — only the tasks remain.
+
+branch = "wt/{{slug}}"
+
+[hooks]
+# The cargo registry is already shared (~/.cargo), so there is nothing to copy. `target/`
+# is deliberately not inherited — two branches produce different artefacts, and a
+# `cargo build` rebuilds what is missing anyway.
+post_new = ["cargo fetch"]
+
+[status.info]
+target = "test -d target && du -sh target 2>/dev/null | cut -f1 || echo '-'"
+
+[tasks.build]
+description = "build"
+run = "cargo build {{args}}"
+
+[tasks.test]
+description = "tests"
+run = "cargo test {{args}}"
+
+[tasks.run]
+description = "run the binary"
+run = "cargo run -- {{args}}"
+
+[tasks.check]
+description = "fmt + clippy"
+run = ["cargo fmt --check", "cargo clippy --all-targets -- -D warnings"]
+
+[tasks.bench]
+description = "compare this branch against the main repository"
+run = [
+    "cargo build --release",
+    "hyperfine '{{path}}/target/release/{{repo}} --help' '{{main}}/target/release/{{repo}} --help'",
+]

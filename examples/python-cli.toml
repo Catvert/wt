@@ -1,0 +1,40 @@
+# Example: a Python project (script, data processing, CLI) — no server.
+#
+# The virtual environment belongs to the worktree: two branches rarely share the same
+# dependencies, and a shared venv would produce wrong results rather than an error.
+
+branch = "wt/{{slug}}"
+
+# Input data, on the other hand, is shared: a symlink avoids duplicating gigabytes and
+# keeps a single reference copy.
+[[copy]]
+from = "data"
+mode = "symlink"
+optional = true
+
+[hooks]
+post_new = [
+    "python3 -m venv .venv",
+    ".venv/bin/pip install --quiet --upgrade pip",
+    ".venv/bin/pip install --quiet -e '.[dev]' || .venv/bin/pip install --quiet -r requirements.txt",
+]
+
+[status.info]
+python = ".venv/bin/python --version 2>&1 || echo 'no venv'"
+
+[tasks.test]
+description = "pytest"
+run = ".venv/bin/pytest {{args}}"
+
+[tasks.lint]
+description = "ruff"
+run = ".venv/bin/ruff check ."
+
+[tasks.shell]
+description = "shell with the venv activated"
+interactive = true
+run = "bash --rcfile <(echo 'source .venv/bin/activate')"
+
+[tasks.run]
+description = "run the main module"
+run = ".venv/bin/python -m {{repo}} {{args}}"

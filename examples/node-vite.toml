@@ -1,0 +1,38 @@
+# Minimal example: a Node project with a Vite dev server.
+#
+# Each worktree gets its own port, its own node_modules (hardlinked from the main
+# repository) and its own dev server started in the background.
+
+branch = "wt/{{slug}}"
+
+[[copy]]
+from = "node_modules"
+mode = "hardlink"
+
+[ports.vite]
+base = 5173
+
+[hooks]
+# Hardlinks are usually enough; `npm install` catches up when the lockfile moved on the
+# branch.
+post_new = ["npm install --prefer-offline --no-audit --fund=false"]
+
+# nohup + PID: `wt up` must return, and `wt down` must know what to kill.
+up = ["nohup npm run dev -- --port {{port.vite}} --strictPort > .wt-dev.log 2>&1 & echo $! > .wt-dev.pid"]
+
+down = ["kill \"$(cat .wt-dev.pid 2>/dev/null)\" 2>/dev/null; rm -f .wt-dev.pid"]
+
+[status]
+up = "kill -0 \"$(cat .wt-dev.pid 2>/dev/null)\" 2>/dev/null"
+
+[open]
+url = "http://localhost:{{port.vite}}"
+
+[tasks.log]
+description = "follow the dev server"
+interactive = true
+run = "tail -f .wt-dev.log"
+
+[tasks.test]
+description = "tests"
+run = "npm test -- {{args}}"

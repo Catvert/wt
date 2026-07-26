@@ -1,0 +1,20 @@
+# Worktree configuration for wt itself.
+# A Rust project has no service to start and no port to reserve: the config boils down
+# to the tasks that are useful while developing.
+
+branch = "wt/{{slug}}"
+
+[status.info]
+version = "cargo pkgid 2>/dev/null | sed 's/.*[#@]//'"
+
+[tasks.build]
+description = "build"
+run = "cargo build {{args}}"
+
+[tasks.test]
+description = "tests"
+run = "cargo test {{args}}"
+
+[tasks.check]
+description = "clippy + fmt"
+run = ["cargo fmt --check", "cargo clippy --all-targets -- -D warnings"]

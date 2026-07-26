@@ -1,0 +1,346 @@
+# wt
+
+Gestionnaire de worktrees git, configuré **par projet** dans un fichier `wt.toml` — comme
+`just` avec son `justfile`.
+
+*[English version](README.md)*
+
+Le binaire ne connaît ni Docker, ni Laravel, ni npm. Il sait faire cinq choses :
+
+- créer et supprimer des worktrees git ;
+- recopier ce que le worktree doit hériter du repo principal (hardlinks pour `vendor/`,
+  `node_modules/`… — quasi gratuit sur le disque) ;
+- exécuter les commandes shell déclarées par le projet aux moments qui comptent
+  (création, démarrage, arrêt, suppression) et à la demande (`[tasks]`) ;
+- suivre un état par worktree (branche, options du dernier démarrage, ports si le projet
+  en demande) ;
+- présenter tout ça dans une interface interactive.
+
+Tout ce qui est spécifique à une stack passe par des hooks shell : un projet Laravel, un
+CLI Rust et un traitement de données Python utilisent le même binaire avec trois
+`wt.toml` différents.
+
+**Rien n'est présumé web.** Ports, URL et sondes d'état sont facultatifs : un projet qui
+n'en déclare pas ne voit ni colonne « PORTS », ni état, ni action « navigateur ». Pour
+beaucoup de dépôts, un `wt.toml` de trois lignes suffit :
+
+```toml
+branch = "wt/{{slug}}"
+
+[tasks]
+test = { description = "tests", run = "cargo test {{args}}" }
+```
+
+## Installation
+
+### Nix / NixOS
+
+```bash
+nix run github:Catvert/wt                 # essayer sans installer
+nix profile install github:Catvert/wt     # installer pour l'utilisateur courant
+```
+
+Dans une configuration NixOS ou avec home-manager :
+
+```nix
+{
+  inputs.wt.url = "github:Catvert/wt";
+
+  # environment.systemPackages = [ inputs.wt.packages.${system}.default ];
+  # ou, via l'overlay :
+  # nixpkgs.overlays = [ inputs.wt.overlays.default ];
+  # environment.systemPackages = [ pkgs.wt ];
+}
+```
+
+Les complétions shell sont installées par le paquet.
+
+### Cache binaire (aucune compilation locale)
+
+Les builds sont poussés sur [Cachix](https://cachix.org) par la CI : `nix run` et
+`nix profile install` téléchargent le binaire au lieu de le compiler.
+
+Nix propose le cache de lui-même à la lecture du flake (il demande confirmation sauf si
+tu es `trusted-user`). Pour l'accepter une bonne fois, sur NixOS :
+
+```nix
+{
+  nix.settings = {
+    substituters = [ "https://wt.cachix.org" ];
+    trusted-public-keys = [ "wt.cachix.org-1:REMPLACER" ];
+  };
+}
+```
+
+Hors NixOS, `cachix use wt` écrit la même chose dans `~/.config/nix/nix.conf`.
+
+### Depuis les sources
+
+```bash
+cargo install --git https://github.com/Catvert/wt
+```
+
+### Binaire précompilé
+
+Chaque release publie des archives `x86_64-unknown-linux-gnu` et
+`x86_64-unknown-linux-musl` (lié statiquement), avec leurs sommes de contrôle.
+Complétions :
+
+```bash
+wt completions zsh > ~/.zfunc/_wt      # bash | zsh | fish | elvish | powershell
+```
+
+## Démarrage
+
+```bash
+cd mon-projet
+wt init                 # un wt.toml sans service ; --preset web pour port + URL
+$EDITOR wt.toml
+wt new demo             # crée ../mon-projet-wt/demo sur la branche wt/demo
+wt                      # interface interactive
+```
+
+## Commandes
+
+| Commande | Effet |
+|---|---|
+| `wt` | interface interactive (liste, aperçu, actions) |
+| `wt init [--preset plain\|web] [--force]` | écrit un `wt.toml` d'exemple |
+| `wt new <slug> [branche] [--set k=v]` | checkout + dossiers + copies + hooks `post_new` |
+| `wt up <slug> [--set k=v]` | hooks `up` (et allocation des ports, s'il y en a) |
+| `wt down <slug>` | hooks `down` — le checkout et l'état sont conservés |
+| `wt ls` / `wt show <slug>` | état des worktrees |
+| `wt rm <slug> [-y]` | hooks `pre_rm`, retrait du worktree, hooks `post_rm` |
+| `wt ide <slug> [éditeur]` | ouvre le worktree dans un éditeur |
+| `wt open <slug> [cible] [--list]` | ouvre une adresse dans le navigateur (WSL compris) |
+| `wt run <tâche> <slug> [args…]` | lance une tâche du `wt.toml` |
+| `wt tasks` / `wt root` / `wt path <slug>` | introspection |
+| `wt completions <shell>` | script de complétion |
+
+`wt` fonctionne depuis le repo principal **comme depuis un worktree** : la configuration
+est toujours celle du repo principal, pas celle de la branche en cours de checkout.
+
+### Raccourcis de l'interface
+
+`↑↓`/`jk` naviguer · `ENTRÉE` menu d'actions · `n` créer · `s` démarrer ·
+`S` démarrer avec options · `d` arrêter · `e` éditeur · `o` navigateur · `t` tâche ·
+`r` supprimer · `g` rafraîchir · `m` souris · `?` aide · `q` quitter.
+
+**Souris** (active par défaut) : clic sélectionne une ligne, double-clic ouvre le menu
+d'actions, la molette fait défiler la liste, un sélecteur ou le panneau de sortie. Dans
+une liste à choix multiples, un clic coche. `m` coupe la capture souris — le terminal
+retrouve sa sélection de texte native, le temps de copier une ligne.
+
+Le pied de page, le menu d'actions et l'aide n'affichent que ce que le `wt.toml`
+déclare : sans `[hooks] up`, pas de « démarrer » ; sans `[open] url`, pas de
+« navigateur ».
+
+### Sortie des actions
+
+Créations, démarrages, arrêts, suppressions et tâches s'exécutent **sans quitter
+l'interface** : leur sortie (stdout et stderr) défile au fil de l'eau dans un panneau,
+avec `↑↓` / `PgUp` / `PgDn` pour remonter, et `ENTRÉE` pour fermer une fois l'action
+terminée. La liste et l'aperçu se rafraîchissent tout seuls.
+
+Les couleurs des commandes sont **interprétées**, pas affichées telles quelles : un hook
+qui écrit `\033[36m…\033[0m`, ou un `docker`/`cargo` qui colore sa sortie, s'affiche
+comme dans un terminal (palettes 256 et RGB comprises). Les barres de progression qui se
+réécrivent avec `\r` n'affichent que leur dernier état.
+
+Une tâche qui a besoin du terminal — un shell, un `logs -f`, un watcher plein écran — se
+déclare `interactive = true` : l'interface s'efface le temps de son exécution, puis
+reprend la main. C'est aussi le cas de l'éditeur.
+
+### Enchaînements proposés
+
+- **après une création**, si le projet a des `[hooks] up`, le panneau demande « démarrer
+  les services maintenant ? » — `o` enchaîne (questions du `wt.toml` comprises), toute
+  autre touche ferme ;
+- **après l'ouverture d'un éditeur graphique**, l'interface propose un terminal à la
+  racine du worktree — ce qu'une fenêtre d'IDE ne donne pas. Le shell est `WT_TERMINAL`,
+  sinon `[editor] terminal` du `wt.toml`, sinon `$SHELL`. (Un éditeur qui vit dans le
+  terminal, comme `nvim`, remplace le process : rien ne peut être enchaîné derrière, la
+  question n'est donc pas posée.)
+
+## Le fichier `wt.toml`
+
+Toutes les sections sont facultatives. Celle-ci montre tout à la fois, à titre de
+référence — un projet sans serveur laisse simplement `[ports]`, `[status]` et `[open]`
+de côté.
+
+```toml
+root   = "{{main}}/../{{repo}}-wt"   # défaut
+branch = "wt/{{slug}}"               # défaut
+
+[vars]
+host = "{{slug}}.wt.localhost"       # les vars peuvent se référencer entre elles
+
+dirs = ["storage/framework/views"]   # créés après le checkout
+
+[[copy]]
+from = "node_modules"                # to = from par défaut
+mode = "hardlink"                    # hardlink | copy | symlink
+
+[ports.vite]
+base = 5200                          # premier port testé
+allocate = "up"                      # "up" (défaut) | "new"
+
+[hooks]
+post_new = ["npm install"]
+up       = ["docker compose -p {{repo}}-{{slug}} up -d"]
+down     = ["docker compose -p {{repo}}-{{slug}} down"]
+pre_rm   = ["docker compose -p {{repo}}-{{slug}} down -v"]
+post_rm  = []
+
+[status]
+up = "docker compose -p {{repo}}-{{slug}} ps -q app | grep -q ."   # code 0 = démarré
+
+[status.info]                        # lignes en plus dans l'aperçu
+taille = "du -sh . | cut -f1"
+
+[open]
+url = "http://{{host}}"              # adresse principale
+label = "application"                # son libellé dans le sélecteur
+source = "./scripts/urls.sh"         # adresses supplémentaires : url<TAB>libellé
+
+[editor]
+command = "phpstorm"                 # WT_IDE de l'environnement reste prioritaire
+terminal = "zsh"                     # shell proposé après l'ouverture de l'éditeur
+
+[tasks.shell]
+description = "shell dans le conteneur"
+interactive = true
+run = "docker compose -p {{repo}}-{{slug}} exec app bash"
+```
+
+### Exemples
+
+| Fichier | Profil |
+|---|---|
+| `examples/rust-cli.toml` | binaire/bibliothèque — **aucun service, aucun port** |
+| `examples/python-cli.toml` | script ou traitement de données — venv par worktree, données en symlink |
+| `examples/node-vite.toml` | serveur de dev par worktree |
+| `examples/laravel-sail.toml` | multi-tenant, Caddy partagé, bases isolées |
+
+### Variables
+
+| Variable | Valeur |
+|---|---|
+| `{{slug}}` `{{branch}}` `{{path}}` | le worktree |
+| `{{main}}` `{{root}}` `{{repo}}` `{{project}}` | le projet |
+| `{{port.<nom>}}` | port alloué pour `[ports.<nom>]` (si le projet en déclare) |
+| `{{opt.<nom>}}` | option passée en `--set <nom>=<valeur>` |
+| `{{args}}` | arguments de `wt run` (tâches uniquement) |
+
+Les mêmes valeurs sont exportées à l'environnement des hooks : `WT_SLUG`, `WT_PATH`,
+`WT_PORT_VITE`, `WT_OPT_TENANTS`… Pratique dès qu'un hook dépasse une ligne.
+
+Une clé inconnue est laissée telle quelle (`{{port.web}}` visible dans la commande qui
+échoue vaut mieux qu'un argument silencieusement disparu), et `awk '{print $1}'` traverse
+le moteur sans dommage.
+
+### Options `--set`
+
+`wt up demo --set tenants=acme,globex --set services=queue,reverb` rend
+`{{opt.tenants}}` et `{{opt.services}}` disponibles dans les hooks. Elles sont
+**mémorisées** : un `wt up demo` ultérieur reconduit le même démarrage, et un nouveau
+`--set` ne remplace que les clés citées.
+
+### Questions posées avant l'action (`[[prompt]]`)
+
+Un projet peut déclarer les questions que l'interface doit poser avant `new` ou `up`.
+Les réponses deviennent des options — exactement comme un `--set`, mémorisation comprise.
+
+```toml
+[[prompt]]
+name = "db"                  # → {{opt.db}} et $WT_OPT_DB
+ask = "new"                  # "up" (défaut) | "new" | "both"
+question = "bases de données"
+type = "choice"              # "choice" | "multi" | "confirm" | "text"
+default = "shared"
+options = [
+    { value = "shared",   label = "partagées", detail = "aucune migration possible" },
+    { value = "isolated", label = "isolées",   detail = "obligatoire si la branche migre" },
+]
+
+[[prompt]]
+name = "tenants"
+type = "multi"                            # ESPACE coche, ENTRÉE valide
+separator = ","                           # jointure des valeurs cochées (défaut)
+when = "test \"$WT_OPT_DB\" = isolated"   # posée seulement si la commande renvoie 0
+source = "mon-script --liste"             # une ligne par choix : valeur<TAB>libellé<TAB>détail
+```
+
+- **`source`** rend la liste dynamique : le binaire ne sait pas ce qu'est un tenant, une
+  base ou un device — il exécute la commande du projet et affiche ce qu'elle énumère.
+- **`when`** voit les réponses déjà données (`$WT_OPT_*`) et la phase en cours
+  (`$WT_PHASE` = `new` ou `up`), ce qui permet d'enchaîner les questions.
+- Une option **déjà connue** n'est pas redemandée — c'est ce qui fait qu'un `wt up`
+  répété reconduit le même montage sans rien demander. `always = true` force la question.
+- `default` présélectionne (ou pré-coche en `multi`) : le cas courant se valide d'un
+  ENTRÉE.
+- `ÉCHAP` pendant une question **annule l'action entière** : la lancer avec des réponses
+  à moitié collectées serait pire que ne rien faire.
+- Une `source` qui ne renvoie rien n'immobilise pas l'interface : la question est ignorée
+  et l'action continue.
+
+En ligne de commande, rien n'est demandé — `wt new demo --set db=isolated` reste
+entièrement scriptable.
+
+### Plusieurs adresses (`[open] source`)
+
+Un worktree n'a pas toujours une seule adresse : une application multi-tenant en a une
+par tenant monté, un projet à plusieurs services une par service. `source` est une
+commande shell qui les énumère, une ligne par lien :
+
+```
+http://acme.demo.wt.localhost	tenant acme
+http://globex.demo.wt.localhost	tenant globex
+```
+
+Elle voit les options du worktree (`$WT_OPT_TENANTS`…), ce qui lui permet de ne proposer
+que ce qui est réellement monté. Elle n'est lancée qu'au moment d'ouvrir — jamais pour
+afficher la liste des worktrees — car elle peut interroger une base ou un conteneur.
+
+```bash
+wt open demo                 # la première adresse (l'application)
+wt open demo globex          # celle dont le libellé ou l'URL contient « globex »
+wt open demo --list          # les afficher toutes
+```
+
+Dans l'interface, `o` ouvre directement s'il n'y a qu'une adresse, et propose un
+sélecteur dès qu'il y en a plusieurs.
+
+## Ce que `wt` garantit
+
+- **Rien n'est imposé.** Ports, état, URL, hooks : tout est facultatif, et l'interface se
+  réduit à ce que le projet déclare. Un `wt.toml` vide est viable.
+- **Ports stables** — pour les projets qui en demandent. Alloués une seule fois,
+  conservés à l'arrêt, jamais réutilisés par un autre worktree du projet : signets et
+  configs d'IDE ne bougent pas.
+- **L'état vit hors du checkout**, dans `<root>/.wt/<slug>.toml` : rien à ajouter au
+  `.gitignore` du projet, et l'état survit à un changement de branche.
+- **La branche survit à `wt rm`.** Retirer un worktree ne doit jamais faire disparaître
+  du travail non fusionné ; `wt` rappelle la commande `git branch -d` à exécuter
+  soi-même.
+- **Un shell POSIX** (`sh`) exécute les hooks, quel que soit le shell de l'utilisateur
+  (surchargeable par `WT_SHELL`).
+
+## Variables d'environnement
+
+| Variable | Effet |
+|---|---|
+| `WT_LANG` | langue de l'interface (`en`, `fr`) ; sinon `LC_ALL`/`LC_MESSAGES`/`LANG`, puis l'anglais |
+| `WT_CONFIG` | chemin d'un `wt.toml` alternatif |
+| `WT_IDE` | éditeur prioritaire (commande ou chemin absolu, `.exe` Windows compris) |
+| `WT_TERMINAL` | shell ouvert dans le worktree (défaut `$SHELL`) |
+| `WT_SHELL` | shell des hooks (défaut `sh`) |
+
+## Projets voisins
+
+`wt.exe` est Windows Terminal, et crates.io héberge `wt-core` et `wt-cli`, deux
+gestionnaires de worktrees sans rapport. Ce projet n'est pas publié sur crates.io.
+
+## Licence
+
+MIT.

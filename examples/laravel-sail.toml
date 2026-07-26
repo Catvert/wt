@@ -1,0 +1,135 @@
+# Example: multi-tenant Laravel/Sail application behind a shared Caddy.
+#
+# Paths, ports, copies and state are declarative; everything touching Docker, MariaDB and
+# Caddy stays shell, because that is where it reads best.
+
+root = "{{main}}/../{{repo}}-wt"
+branch = "wt/{{slug}}"
+
+# Unversioned caches: without them the application refuses to start.
+# (TOML rule: top-level keys come before the first table.)
+dirs = [
+    "storage/app",
+    "storage/logs",
+    "storage/framework/cache/data",
+    "storage/framework/sessions",
+    "storage/framework/views",
+    "bootstrap/cache",
+]
+
+[vars]
+host = "{{slug}}.wt.localhost"
+compose = "docker compose -f docker-compose.worktree.yml -p {{repo}}-wt-{{slug}}"
+
+# Hardlinks: vendor/ and node_modules/ cost a few seconds and almost no disk. composer
+# and npm replace files, which cleanly breaks the link.
+[[copy]]
+from = "vendor"
+mode = "hardlink"
+
+[[copy]]
+from = "node_modules"
+mode = "hardlink"
+
+# The .env, on the other hand, is modified by the worktree: a real copy.
+[[copy]]
+from = ".env"
+mode = "copy"
+
+# Gitignored: without it the page has no styling until the watcher has run.
+[[copy]]
+from = "public/uno.css"
+mode = "copy"
+
+[ports.vite]
+base = 5200
+
+[ports.reverb]
+base = 6200
+
+[hooks]
+# The inherited .env still points at the main repository: rewire it onto the worktree.
+# Every occurrence of a key is removed before being rewritten — Laravel loads the .env
+# immutably, so the FIRST occurrence wins and a plain append would be ignored.
+post_new = [
+    """
+    sed -i '/^[[:space:]]*\\(APP_URL\\|APP_SERVICE\\|COMPOSE_PROJECT_NAME\\|EXTRA_CENTRAL_DOMAINS\\|REDIS_PREFIX\\|VITE_PORT\\|REVERB_PORT\\)[[:space:]]*=/d' .env
+    cat >> .env <<EOF
+APP_URL=http://{{host}}
+APP_SERVICE=app-wt
+COMPOSE_PROJECT_NAME={{repo}}-wt-{{slug}}
+EXTRA_CENTRAL_DOMAINS={{host}}
+REDIS_PREFIX=wt_{{slug}}_
+VITE_PORT={{port.vite}}
+EOF
+    """,
+    "cp {{main}}/.env.testing .env.testing 2>/dev/null || true",
+]
+
+# Caddy route published in the main repository, then the application container.
+# The http:// prefix is mandatory: without it Caddy turns on auto-HTTPS and redirects to
+# port 443, which is not published.
+up = [
+    """
+    cat > {{main}}/docker/caddy/conf.d/{{slug}}.caddy <<EOF
+http://{{host}}, http://*.{{host}} {
+	encode zstd gzip
+	reverse_proxy {{repo}}_wt_{{slug}}:8181 {
+		header_up Host {host}
+		header_up X-Forwarded-Proto "http"
+	}
+}
+EOF
+    """,
+    "docker exec caddy caddy reload --config /etc/caddy/Caddyfile",
+    "{{compose}} up -d --remove-orphans",
+]
+
+down = [
+    "{{compose}} down --remove-orphans",
+    "rm -f {{main}}/docker/caddy/conf.d/{{slug}}.caddy",
+    "docker exec caddy caddy reload --config /etc/caddy/Caddyfile",
+]
+
+# Databases cloned by the `db-clone` task disappear with the worktree.
+pre_rm = [
+    "{{compose}} down -v --remove-orphans || true",
+    "rm -f {{main}}/docker/caddy/conf.d/{{slug}}.caddy",
+    """
+    docker exec mariadb sh -c "mariadb -uroot -p\\$MYSQL_ROOT_PASSWORD -N -e \\"SHOW DATABASES LIKE 'wt_{{slug}}\\\\_%'\\" | while read db; do mariadb -uroot -p\\$MYSQL_ROOT_PASSWORD -e \\"DROP DATABASE \\\\\\`\\$db\\\\\\`\\"; done" || true
+    """,
+]
+
+[status]
+up = "{{compose}} ps -q app-wt | grep -q ."
+
+[status.info]
+databases = "grep -E '^(DB_DATABASE|TENANCY_DB_PREFIX)=' .env | tr '\\n' ' '"
+
+[open]
+url = "http://{{host}}"
+
+[editor]
+command = "phpstorm"
+
+[tasks.shell]
+description = "shell inside the container"
+interactive = true
+run = "{{compose}} exec -u sail app-wt bash"
+
+[tasks.logs]
+description = "container logs"
+interactive = true
+run = "{{compose}} logs -f --tail=100"
+
+[tasks.migrate]
+description = "migrations (isolated databases only)"
+run = [
+    "grep -q '^TENANCY_DB_PREFIX=wt_' .env || { echo 'databases shared with the main repository — migration refused'; exit 1; }",
+    "{{compose}} exec -T -u sail app-wt php artisan migrate --force",
+    "{{compose}} exec -T -u sail app-wt php artisan tenants:migrate --force",
+]
+
+[tasks.test]
+description = "the worktree test suite"
+run = "{{compose}} exec -T -u sail app-wt php artisan test {{args}}"

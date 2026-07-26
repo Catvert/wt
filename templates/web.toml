@@ -1,0 +1,105 @@
+# wt.toml — worktree configuration for this project (the "web" preset).
+#
+# This template assumes an application served on a port: each worktree gets one, and the
+# matching URL can be opened from the interface. For a project without a server
+# (library, CLI, desktop app, game…): `wt init --preset plain --force`.
+#
+# Variables available in every template:
+#   {{slug}} {{branch}} {{path}} {{main}} {{root}} {{repo}} {{project}}
+#   {{port.<name>}}  allocated ports (the [ports] section)
+#   {{opt.<name>}}   options passed with --set <name>=<value>
+#   {{args}}         arguments of `wt run` (tasks only)
+# The same values are exported to hooks: WT_SLUG, WT_PATH, WT_PORT_WEB, WT_OPT_X…
+
+# Where worktrees live. Defaults to "{{main}}/../{{repo}}-wt".
+# root = "{{main}}/../{{repo}}-wt"
+
+# Branch name template used by `wt new <slug>` without an explicit branch.
+branch = "wt/{{slug}}"
+
+# Directories created after the checkout (unversioned caches).
+# Careful (TOML rule): every top-level key must come before the first [table],
+# otherwise it is read as a key of that table.
+dirs = []
+
+[vars]
+# Reusable variables; they may reference one another.
+host = "{{slug}}.localhost"
+
+# Files inherited from the main repository.
+# mode: hardlink (default, nearly free) | copy | symlink
+# [[copy]]
+# from = "node_modules"
+# mode = "hardlink"
+#
+# [[copy]]
+# from = ".env"
+# mode = "copy"
+
+# Ports allocated automatically, unique across worktrees (stopped ones included).
+# allocate: "up" (default, on first start) | "new" (at creation)
+[ports.web]
+base = 5200
+
+# Questions the interface asks before `new` / `up`; the answers become options
+# (`{{opt.<name>}}`, `$WT_OPT_<NAME>`), just like a `--set` on the command line.
+# type: choice (default) | multi | confirm | text
+# [[prompt]]
+# name = "services"
+# ask = "up"
+# type = "multi"
+# default = "api"
+# options = [
+#     { value = "api", label = "API", detail = "backend" },
+#     { value = "worker", label = "worker", detail = "background jobs" },
+# ]
+#
+# Choices computed by a command, one line per choice: value<TAB>label<TAB>detail
+# [[prompt]]
+# name = "dataset"
+# source = "ls -1 datasets/"
+# when = "test \"$WT_PHASE\" = up"
+
+[hooks]
+# After the worktree is created.
+post_new = [
+    # "npm install",
+]
+
+# `wt up <slug>`
+up = [
+    # "npm run dev -- --port {{port.web}}",
+]
+
+# `wt down <slug>`
+down = []
+
+# Before / after the worktree is removed.
+pre_rm = []
+post_rm = []
+
+[status]
+# Exit code 0 means "started". Without this key, no state is displayed.
+# up = "docker compose -p {{repo}}-{{slug}} ps -q app | grep -q ."
+
+# Extra lines in the interface preview (run inside the worktree).
+# [status.info]
+# size = "du -sh . | cut -f1"
+
+[open]
+url = "http://{{host}}:{{port.web}}"
+# label = "application"
+# Extra addresses (one per tenant, per service…): a shell command writing one line per
+# link, `url<TAB>label`. Only run when opening.
+# source = "./scripts/wt-urls.sh"
+
+# [editor]
+# command = "nvim"
+# terminal = "zsh"   # shell offered after the editor opens
+
+[tasks]
+# `wt run <name> <slug> [args…]`
+# Output shows in a panel of the interface; `interactive = true` gives the terminal
+# back to the task (shell, logs -f, full-screen watcher).
+# test  = { description = "test suite", run = "npm test -- {{args}}" }
+# shell = { description = "shell", run = "bash", interactive = true }

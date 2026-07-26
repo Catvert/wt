@@ -1,0 +1,60 @@
+# wt.toml — worktree configuration for this project.
+#
+# This template assumes no server, no port and no browser: it suits a library, a CLI, a
+# desktop application, a game, a data pipeline…
+# For a web application (a port per worktree, a URL to open):
+#   wt init --preset web --force
+#
+# Variables available in every template:
+#   {{slug}} {{branch}} {{path}} {{main}} {{root}} {{repo}} {{project}}
+#   {{opt.<name>}}   options passed with --set <name>=<value>
+#   {{args}}         arguments of `wt run` (tasks only)
+# The same values are exported to hooks: WT_SLUG, WT_PATH, WT_OPT_X…
+
+# Where worktrees live. Defaults to "{{main}}/../{{repo}}-wt".
+# root = "{{main}}/../{{repo}}-wt"
+
+# Branch name template used by `wt new <slug>` without an explicit branch.
+branch = "wt/{{slug}}"
+
+# Directories created after the checkout (unversioned caches).
+# Careful (TOML rule): every top-level key must come before the first [table],
+# otherwise it is read as a key of that table.
+dirs = []
+
+# Files inherited from the main repository.
+# mode: hardlink (default, nearly free) | copy | symlink
+# [[copy]]
+# from = "node_modules"
+# mode = "hardlink"
+
+[hooks]
+# After the worktree is created: dependencies, code generation, a first build…
+post_new = [
+    # "cargo fetch",
+]
+
+# `wt up` / `wt down` only exist for projects with something to run in the background.
+# Leave these lists empty otherwise: the interface then hides the matching actions.
+up = []
+down = []
+
+# Before / after the worktree is removed.
+pre_rm = []
+post_rm = []
+
+# [editor]
+# command = "nvim"
+# terminal = "zsh"   # shell offered after the editor opens
+
+[tasks]
+# `wt run <name> <slug> [args…]` — this is where most of a service-less project lives.
+# Output shows in a panel of the interface; `interactive = true` gives the terminal
+# back to the task (shell, logs -f, full-screen watcher).
+# build = { description = "build", run = "cargo build {{args}}" }
+# test  = { description = "tests", run = "cargo test {{args}}" }
+# shell = { description = "shell", run = "$SHELL", interactive = true }
+
+# Extra lines in the preview (run inside the worktree).
+# [status.info]
+# size = "du -sh . | cut -f1"
