@@ -37,6 +37,9 @@
 
           nativeBuildInputs = [ pkgs.installShellFiles ];
 
+          # The integration tests drive real repositories, and the sandbox has no git.
+          nativeCheckInputs = [ pkgs.git ];
+
           # Completions come from the binary itself, so they can never drift from the
           # actual commands. Skipped when cross-compiling, where it cannot be run.
           postInstall = pkgs.lib.optionalString
