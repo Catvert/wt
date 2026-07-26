@@ -60,8 +60,9 @@ Les complétions shell sont installées par le paquet.
 Les builds sont poussés sur [Cachix](https://cachix.org) par la CI : `nix run` et
 `nix profile install` téléchargent le binaire au lieu de le compiler.
 
-Nix propose le cache de lui-même à la lecture du flake (il demande confirmation sauf si
-tu es `trusted-user`). Pour l'accepter une bonne fois, sur NixOS :
+Le flake annonce le substituteur, mais Nix n'honore le `nixConfig` d'un flake qu'après
+une confirmation interactive — il est **ignoré silencieusement** dans un script ou en CI.
+Mieux vaut le configurer sur la machine. Sur NixOS :
 
 ```nix
 {
@@ -74,7 +75,14 @@ tu es `trusted-user`). Pour l'accepter une bonne fois, sur NixOS :
 }
 ```
 
-Hors NixOS, `cachix use catvert` écrit la même chose dans `~/.config/nix/nix.conf`.
+Hors NixOS — ou pour un essai ponctuel — `cachix use catvert` écrit la même chose dans
+`~/.config/nix/nix.conf`, et un build isolé l'accepte en ligne :
+
+```bash
+nix build github:Catvert/wt \
+  --option extra-substituters https://catvert.cachix.org \
+  --option extra-trusted-public-keys "catvert.cachix.org-1:R5plivdLnx2WtmZkBryZwUF51Uvl6TJldhFGYOcyPXg="
+```
 
 ### Depuis les sources
 

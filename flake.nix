@@ -3,9 +3,10 @@
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-  # Offered to anyone running `nix run github:Catvert/wt`: prebuilt binaries instead of a
-  # local compilation. Nix asks for confirmation unless the user is a trusted-user; the
-  # permanent way is the `nix.settings` snippet in the README.
+  # Prebuilt binaries instead of a local compilation. Nix only applies a flake's
+  # nixConfig after an interactive confirmation, and ignores it outright in scripts and
+  # CI: this is a convenience, not the supported path. The reliable way is the
+  # `nix.settings` snippet in the README, or `cachix use catvert`.
   nixConfig = {
     extra-substituters = [ "https://catvert.cachix.org" ];
     extra-trusted-public-keys = [

@@ -59,8 +59,9 @@ Shell completions are installed by the package.
 Builds are pushed to [Cachix](https://cachix.org) by CI, so `nix run` / `nix profile
 install` download the binary instead of compiling it.
 
-Nix offers the cache on its own when it reads the flake (it asks for confirmation unless
-you are a `trusted-user`). To accept it once and for all, on NixOS:
+The flake advertises the substituter, but Nix only honours a flake's `nixConfig` after
+an interactive confirmation — it is **silently ignored** in scripts and CI. Configure it
+on the machine instead. On NixOS:
 
 ```nix
 {
@@ -73,7 +74,14 @@ you are a `trusted-user`). To accept it once and for all, on NixOS:
 }
 ```
 
-Outside NixOS, `cachix use catvert` writes the same thing into `~/.config/nix/nix.conf`.
+Outside NixOS — or for a one-off — `cachix use catvert` writes the same thing into
+`~/.config/nix/nix.conf`, and a single build accepts it inline:
+
+```bash
+nix build github:Catvert/wt \
+  --option extra-substituters https://catvert.cachix.org \
+  --option extra-trusted-public-keys "catvert.cachix.org-1:R5plivdLnx2WtmZkBryZwUF51Uvl6TJldhFGYOcyPXg="
+```
 
 ### From source
 
