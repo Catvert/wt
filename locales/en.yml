@@ -109,7 +109,7 @@ ui:
   multi_hint: "TAB toggles · ENTER confirms"
   no_match: "no match — ESC clears the search"
   input_hint: "ENTER confirms · ESC cancels"
-  confirm_hint: "o or y confirms · any other key cancels"
+  confirm_hint: "N/y — y confirms · any other key cancels"
   mouse_on: "mouse enabled"
   mouse_off: "mouse disabled — terminal text selection is yours again"
   no_services: "this project has no services ([hooks] up missing)"

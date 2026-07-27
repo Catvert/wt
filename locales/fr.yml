@@ -109,7 +109,7 @@ ui:
   multi_hint: "TAB coche · ENTRÉE valide"
   no_match: "aucune correspondance — ÉCHAP efface la recherche"
   input_hint: "ENTRÉE valide · ÉCHAP annule"
-  confirm_hint: "o ou y confirme · toute autre touche annule"
+  confirm_hint: "N/o — o confirme · toute autre touche annule"
   mouse_on: "souris activée"
   mouse_off: "souris coupée — la sélection de texte du terminal est rendue"
   no_services: "ce projet n'a pas de services ([hooks] up absent)"
