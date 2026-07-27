@@ -52,7 +52,7 @@ In a NixOS configuration or with home-manager:
 }
 ```
 
-Shell completions are installed by the package.
+Shell completions are installed by the package, slug completion included.
 
 ### Binary cache (no local compilation)
 
@@ -106,6 +106,7 @@ wt init                 # a wt.toml with no services; --preset web for a port + 
 $EDITOR wt.toml
 wt new demo             # creates ../my-project-wt/demo on branch wt/demo
 wt new fix --from dev   # same, but the branch starts at dev
+wt shell demo           # a shell inside the worktree — claude, a build, a rebase…
 wt                      # interactive interface
 ```
 
@@ -120,11 +121,14 @@ wt                      # interactive interface
 | `wt down <slug>` | `down` hooks — the checkout and state are kept |
 | `wt ls` / `wt show <slug>` | worktree state |
 | `wt rm <slug> [-y]` | `pre_rm` hooks, worktree removal, `post_rm` hooks |
+| `wt shell [slug]` | opens a shell at the worktree root |
+| `wt cd [slug]` | changes directory to the worktree (needs `wt shell-init`) |
+| `wt shell-init <bash\|zsh\|fish>` | the shell function `wt cd` needs |
 | `wt ide <slug> [editor]` | opens the worktree in an editor |
 | `wt open <slug> [target] [--list]` | opens an address in the browser (WSL included) |
 | `wt run <task> <slug> [args…]` | runs a `wt.toml` task |
 | `wt tasks` / `wt root` / `wt path <slug>` | introspection |
-| `wt completions <shell>` | shell completion script |
+| `wt completions <shell>` | completion script (slugs, tasks and branches included) |
 
 `wt` works from the main repository **and from inside a worktree**: the configuration is
 always the main repository's, not that of the branch currently checked out.
@@ -132,8 +136,8 @@ always the main repository's, not that of the branch currently checked out.
 ### Interface shortcuts
 
 `↑↓`/`jk` move · `ENTER` action menu · `n` create · `s` start · `S` start with options ·
-`d` stop · `e` editor · `o` browser · `t` task · `r` remove · `g` refresh · `m` mouse ·
-`?` help · `q` quit.
+`d` stop · `c` shell · `e` editor · `o` browser · `t` task · `r` remove · `g` refresh ·
+`m` mouse · `?` help · `q` quit.
 
 **Mouse** (on by default): click selects a row, double-click opens the action menu, the
 wheel scrolls the list, a picker or the output panel. In a multiple-choice list a click
@@ -155,6 +159,77 @@ On the command line that is `wt new <slug> [branch] --from <ref>`. `--from` take
 anything git takes as a start point (a local branch, `origin/dev`, a tag, a commit) and
 only applies to a branch that **does not exist yet**: a branch already written has its
 own history, and wt refuses rather than create something else than what was asked.
+
+### Getting into a worktree
+
+Most of what one does in a worktree is not a hook: a `claude`, a `git rebase -i`, a build
+one wants to watch. Two ways in, depending on whether you mean to come back.
+
+`wt shell <slug>` opens a shell at the worktree root and needs nothing installed. `exit`
+returns where you were:
+
+```bash
+wt shell demo
+claude              # in ../my-project-wt/demo
+exit
+```
+
+`wt cd <slug>` moves the **current** shell instead — no nesting, no `exit`. A process
+cannot change its parent's directory, so this one needs a shell function; `wt shell-init`
+writes it:
+
+```bash
+eval "$(wt shell-init bash)"   # in ~/.bashrc — or `zsh` in ~/.zshrc
+wt shell-init fish > ~/.config/fish/functions/wt.fish
+```
+
+The function only intercepts `wt cd`; every other command goes to the binary untouched.
+Without it, `wt cd demo` still prints the path and says which line is missing.
+
+In the interface it is `c`, or "shell in the worktree" in the action menu: the interface
+steps aside and comes back when the session ends.
+
+Both take **a fragment of a slug** — `wt cd auth` finds `fix-auth` — and both ask when
+what was typed leaves several worktrees, or when nothing was typed at all:
+
+```
+$ wt cd fix
+  1) fix-auth             wt/fix-auth
+  2) hotfix               wt/hotfix
+which worktree? [1-2, ENTER for 1]
+```
+
+wt never guesses between candidates: a wrong directory is discovered three commands
+later. With no terminal to ask on — a script, a pipe — the command fails and names them.
+
+A shell opened by `wt shell` (or by `c`) inherits the worktree's variables, the same ones
+the hooks get: `$WT_SLUG`, `$WT_PATH`, `$WT_PORT_VITE`… Which shell it is comes from
+`WT_TERMINAL`, then `[editor] terminal`, then `$SHELL`. `wt cd`, being your own shell,
+exports nothing.
+
+For a command run often enough to deserve a name, a task beats either — a three-line
+`[tasks.claude]` with `interactive = true`, then `wt run claude demo`.
+
+### Completion
+
+`wt cd <TAB>` offers the project's worktrees, `wt run <TAB>` the `wt.toml`'s tasks, and
+`wt new demo <TAB>` the repository's branches — with the branch, the task's description
+or the commit subject shown alongside, where the shell displays it.
+
+The script does not carry the list: it asks the binary on every TAB, which is the only
+way for it to be right after a `wt new`. Install it either way:
+
+```bash
+wt completions zsh > ~/.zfunc/_wt         # a file, as before
+echo 'source <(COMPLETE=bash wt)' >> ~/.bashrc   # or at shell startup
+```
+
+The second form is regenerated at every shell launch, so it can never be a version
+behind the binary. The first is what a package manager installs — the Nix package does
+exactly that, where the script and the binary come from the same build and cannot drift.
+
+Outside a project — or when the `wt.toml` is broken — the completion offers nothing at
+all rather than an error: a TAB is not the place to learn something is wrong.
 
 ### Searching a picker
 

@@ -605,6 +605,7 @@ impl Ui {
         if self.app.has_down() {
             s.push(t!("key.stop").to_string());
         }
+        s.push(t!("key.shell").to_string());
         s.push(t!("key.editor").to_string());
         if self.app.has_open() {
             s.push(t!("key.browser").to_string());
@@ -849,6 +850,7 @@ impl Ui {
         if self.app.has_down() {
             lines.push(t!("help.stop").to_string());
         }
+        lines.push(t!("help.shell").to_string());
         lines.push(t!("help.editor").to_string());
         if self.app.has_open() {
             lines.push(t!("help.browser").to_string());
@@ -1244,6 +1246,13 @@ impl Ui {
                     self.spawn(title, move |app| app.cmd_down(&s));
                 }
             }
+            KeyCode::Char('c') => {
+                if let Some(s) = slug {
+                    // The shell takes the terminal: the interface steps aside and comes
+                    // back when the session ends, exactly as an interactive task does.
+                    self.exec(term, move |app| app.cmd_shell(&s))?;
+                }
+            }
             KeyCode::Char('e') => self.open_editor_picker(),
             KeyCode::Char('o') => {
                 if !self.app.has_open() {
@@ -1436,6 +1445,11 @@ impl Ui {
         if self.app.has_down() {
             items.push(choice("down", &t!("action.stop"), "hooks down"));
         }
+        items.push(choice(
+            "shell",
+            &t!("action.shell"),
+            &t!("action.shell_detail"),
+        ));
         items.push(choice("ide", &t!("action.editor"), ""));
         if self.app.has_open() {
             items.push(choice("open", &t!("action.browser"), ""));
@@ -1721,6 +1735,11 @@ impl Ui {
                 "new" => self.open_branch_picker(),
                 "task" => self.open_task_picker(),
                 "ide" => self.open_editor_picker(),
+                "shell" => {
+                    if let Some(s) = slug {
+                        self.exec(term, move |app| app.cmd_shell(&s))?;
+                    }
+                }
                 "up" => {
                     if let Some(s) = slug {
                         self.start(PendingAction::Up, s, term)?;

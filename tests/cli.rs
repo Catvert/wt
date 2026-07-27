@@ -303,14 +303,154 @@ fn unknown_things_fail_with_a_clear_message() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("slug"));
 }
 
+/// `wt cd` prints where to go — the shell function is what goes there. A fragment is
+/// enough as long as it leaves one worktree; when it leaves several, a command with
+/// nobody to ask must fail rather than guess.
+#[test]
+fn cd_prints_the_path_of_the_worktree_meant() {
+    let project = project(BASIC);
+    let dir = project.path();
+    let root = dir
+        .parent()
+        .unwrap()
+        .join(format!("{}-wt", dir.file_name().unwrap().to_string_lossy()));
+
+    for slug in ["fix-auth", "hotfix"] {
+        wt(dir).args(["new", slug]).output().unwrap();
+    }
+
+    let out = wt(dir).args(["cd", "fix-auth"]).output().unwrap();
+    assert!(out.status.success(), "{}", stdout(&out));
+    assert_eq!(
+        Path::new(stdout(&out).trim()),
+        root.join("fix-auth"),
+        "the path is the only thing on stdout"
+    );
+
+    // A fragment, not the whole slug: `auth` only matches one of the two.
+    let out = wt(dir).args(["cd", "auth"]).output().unwrap();
+    assert_eq!(Path::new(stdout(&out).trim()), root.join("fix-auth"));
+
+    // `fix` matches both, and a captured stdout means no terminal to ask on.
+    let out = wt(dir).args(["cd", "fix"]).output().unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("fix-auth") && err.contains("hotfix"), "{err}");
+
+    let out = wt(dir).args(["cd", "ghost"]).output().unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("ghost"));
+
+    for slug in ["fix-auth", "hotfix"] {
+        wt(dir).args(["rm", slug, "-y"]).output().unwrap();
+    }
+}
+
+/// The shell function is what makes `wt cd` change the caller's directory. It must be
+/// available before any project exists — an rc file is read once, everywhere.
+#[test]
+fn shell_init_writes_a_function_outside_a_repository() {
+    let dir = tempfile::tempdir().unwrap();
+    for (shell, needle) in [
+        ("bash", "wt() {"),
+        ("zsh", "wt() {"),
+        ("fish", "function wt"),
+    ] {
+        let out = wt(dir.path()).args(["shell-init", shell]).output().unwrap();
+        assert!(out.status.success(), "shell-init {shell} failed");
+        let body = stdout(&out);
+        assert!(body.contains(needle), "{shell}: {body}");
+        // It must call the binary, not itself.
+        assert!(body.contains("command wt cd"), "{shell}: {body}");
+
+        // Hand-written shell: parse it with the shell itself, when the machine has one.
+        // A typo here breaks a login shell, which is worse than a broken command.
+        let file = dir.path().join(format!("init.{shell}"));
+        fs::write(&file, &body).unwrap();
+        let syntax_only = if shell == "fish" {
+            "--no-execute"
+        } else {
+            "-n"
+        };
+        match Command::new(shell).arg(syntax_only).arg(&file).output() {
+            Ok(out) => assert!(
+                out.status.success(),
+                "{shell} rejects its own snippet: {}",
+                String::from_utf8_lossy(&out.stderr)
+            ),
+            // Not installed here: nothing to check against, and nothing to fail over.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => panic!("running {shell}: {e}"),
+        }
+    }
+}
+
 #[test]
 fn completions_work_outside_a_repository() {
     // The Nix build generates them far from any git repository.
     let dir = tempfile::tempdir().unwrap();
-    let out = wt(dir.path())
-        .args(["completions", "bash"])
+    for shell in ["bash", "zsh", "fish", "elvish", "powershell"] {
+        let out = wt(dir.path())
+            .args(["completions", shell])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "completions {shell} failed");
+        let script = stdout(&out);
+        // The script hooks the shell up to `wt` itself — that is what makes the
+        // candidates the project's own, rather than a list frozen at install time.
+        assert!(script.contains("COMPLETE"), "{shell}: {script}");
+        assert!(script.contains("wt"), "{shell}: {script}");
+    }
+}
+
+/// What the shell asks for on TAB: slugs from the worktree root, tasks from the
+/// `wt.toml`. A frozen script could not know either.
+#[test]
+fn completion_candidates_come_from_the_project() {
+    let project = project(BASIC);
+    let dir = project.path();
+    for slug in ["alpha", "beta"] {
+        wt(dir).args(["new", slug]).output().unwrap();
+    }
+
+    // How the generated fish snippet calls back in: the words so far, then the word
+    // being completed.
+    let complete = |words: &[&str]| -> String {
+        let out = wt(dir)
+            .env("COMPLETE", "fish")
+            .arg("--")
+            .args(words)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "completing {words:?} failed");
+        stdout(&out)
+    };
+
+    let slugs = complete(&["wt", "cd", ""]);
+    assert!(slugs.contains("alpha"), "{slugs}");
+    assert!(slugs.contains("beta"), "{slugs}");
+    // Prefix filtering is the shell's convention, and the engine's.
+    let filtered = complete(&["wt", "shell", "al"]);
+    assert!(
+        filtered.contains("alpha") && !filtered.contains("beta"),
+        "{filtered}"
+    );
+
+    let tasks = complete(&["wt", "run", ""]);
+    assert!(tasks.contains("hello"), "{tasks}");
+
+    // Nothing to offer outside a project, and above all no error: a TAB is not the
+    // place to learn that.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let out = wt(elsewhere.path())
+        .env("COMPLETE", "fish")
+        .args(["--", "wt", "cd", ""])
         .output()
         .unwrap();
     assert!(out.status.success());
-    assert!(stdout(&out).contains("_wt"));
+    assert!(!stdout(&out).contains("alpha"), "{}", stdout(&out));
+
+    for slug in ["alpha", "beta"] {
+        wt(dir).args(["rm", slug, "-y"]).output().unwrap();
+    }
 }

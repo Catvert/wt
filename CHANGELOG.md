@@ -6,6 +6,31 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Getting into a worktree without going through a hook: `wt shell [slug]` opens a shell
+  at its root (with the worktree's `$WT_*` variables exported, as the hooks get them),
+  and `c` does the same from the interface. Both take a fragment of a slug and ask when
+  it leaves several worktrees.
+- `wt cd [slug]` moves the current shell instead of nesting one, via the function
+  `wt shell-init <bash|zsh|fish>` writes. Without the integration installed, `wt cd`
+  prints the path and says which line is missing.
+- Completion of what only the project knows: worktree slugs (`wt cd <TAB>`), tasks
+  (`wt run <TAB>`) and branches (`wt new demo <TAB>`, `--from <TAB>`), each with its
+  branch, description or commit subject as the shown detail.
+
+### Changed
+
+- `wt completions <shell>` now writes a script that asks the binary for candidates
+  instead of one carrying a frozen list — that is what lets it complete slugs. Sourcing
+  `COMPLETE=<shell> wt` at shell startup is the alternative, and cannot fall behind the
+  binary. Re-generate the script after upgrading wt.
+
+### Fixed
+
+- Cancelling `wt rm` at the confirmation prompt printed `err.cancelled` instead of the
+  message: the key was missing from both locales.
+
 ## [0.2.0] — 2026-07-26
 
 ### Added

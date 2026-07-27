@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::Sender;
@@ -668,12 +668,21 @@ impl App {
         Ok(())
     }
 
+    // --------------------------------------------------------------------------------
+    // shell / cd — getting into the worktree
+    // --------------------------------------------------------------------------------
+
     /// Opens an interactive shell at the worktree root.
     ///
-    /// This is the editor's natural companion: an IDE window does not give you a
-    /// terminal already sitting in the right place.
+    /// The natural way to run something *in* a worktree — `claude`, a build, a git
+    /// rebase — without teaching wt.toml about it, and the editor's companion too: an
+    /// IDE window does not give you a terminal already sitting in the right place.
+    ///
+    /// The session inherits the worktree's variables (`$WT_SLUG`, `$WT_PATH`,
+    /// `$WT_PORT_*`…), the same ones the hooks get: what runs by hand in there sees
+    /// exactly what a hook would.
     pub fn cmd_shell(&self, slug: &str) -> Result<()> {
-        self.require_existing(slug)?;
+        let st = self.require_existing(slug)?;
         let dir = self.dir(slug);
         let shell = std::env::var("WT_TERMINAL")
             .ok()
@@ -684,6 +693,7 @@ impl App {
         // Interactive: inherited stdio, and we wait for the session to end.
         let status = Command::new(&shell)
             .current_dir(&dir)
+            .envs(state::env(&self.vars(slug, &st)))
             .status()
             .with_context(|| t!("err.spawn_failed", command = shell).to_string())?;
         if !status.success() {
@@ -691,6 +701,72 @@ impl App {
             self.info(t!("info.session_ended").to_string());
         }
         Ok(())
+    }
+
+    /// Prints a worktree's path, for the shell function `wt shell-init` installs.
+    ///
+    /// A process cannot change its parent's directory: the binary can only say where to
+    /// go, and the function does the `cd`. Which is why the path — and nothing else —
+    /// goes to stdout.
+    ///
+    /// When stdout *is* a terminal, nobody is capturing what we print: the integration
+    /// is missing, and saying so beats leaving a path to copy by hand.
+    pub fn cmd_cd(&self, pattern: Option<&str>) -> Result<()> {
+        let slug = self.choose_slug(pattern)?;
+        println!("{}", self.dir(&slug).display());
+        if io::stdout().is_terminal() {
+            warn(&t!(
+                "hint.no_shell_integration",
+                shell = current_shell_name(),
+                slug = slug
+            ));
+        }
+        Ok(())
+    }
+
+    /// Turns what was typed on the command line into an existing worktree.
+    ///
+    /// `wt cd auth` reaches `fix-auth`: a slug is what one types to get somewhere, not
+    /// an identifier to be transcribed in full. An exact name always wins over a fuzzy
+    /// match — a worktree literally called `fix` must never be shadowed by a longer
+    /// neighbour.
+    ///
+    /// Nothing typed at all, or a pattern still matching several worktrees, asks. wt
+    /// never guesses between candidates: the whole point of `cd` is to land somewhere
+    /// known, and a wrong directory is discovered three commands later.
+    pub fn choose_slug(&self, pattern: Option<&str>) -> Result<String> {
+        let all = self.list();
+        if all.is_empty() {
+            bail!("{}", t!("info.no_worktrees", path = self.root.display()));
+        }
+        let mut candidates: Vec<Worktree> = match pattern {
+            None => all,
+            Some(p) if all.iter().any(|w| w.slug == p) => {
+                all.into_iter().filter(|w| w.slug == p).collect()
+            }
+            Some(p) => {
+                let mut scored: Vec<(i32, Worktree)> = all
+                    .into_iter()
+                    .filter_map(|w| crate::fuzzy::matches(p, &w.slug).map(|m| (m.score, w)))
+                    .collect();
+                // Best match first — it is the one an ENTER accepts. Ties keep the
+                // alphabetical order `list` gives, so the menu is stable.
+                scored.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
+                scored.into_iter().map(|(_, w)| w).collect()
+            }
+        };
+        if candidates.is_empty() {
+            bail!(
+                "{}",
+                t!("err.unknown_worktree", slug = pattern.unwrap_or_default())
+            );
+        }
+        let chosen = if candidates.len() == 1 {
+            0
+        } else {
+            ask_which(&candidates)?
+        };
+        Ok(candidates.swap_remove(chosen).slug)
     }
 
     /// Does the chosen editor live in the current terminal?
@@ -894,6 +970,55 @@ fn confirm(question: &str) -> Result<bool> {
     let mut answer = String::new();
     io::stdin().read_line(&mut answer)?;
     Ok(matches!(answer.trim(), "y" | "Y" | "o" | "O"))
+}
+
+/// Asks which worktree, when what was typed leaves more than one. Returns its index.
+///
+/// Question and list go to **stderr**: `wt cd`'s stdout is the path, and the shell
+/// function captures it — a menu mixed into it would be what we tried to `cd` to.
+fn ask_which(candidates: &[Worktree]) -> Result<usize> {
+    if !io::stdin().is_terminal() || !io::stderr().is_terminal() {
+        // A script has nobody to answer: a failure naming the candidates beats a
+        // command waiting forever on a stdin that will never come.
+        let slugs: Vec<&str> = candidates.iter().map(|w| w.slug.as_str()).collect();
+        bail!("{}", t!("err.ambiguous", slugs = slugs.join(", ")));
+    }
+    for (i, wt) in candidates.iter().enumerate() {
+        eprintln!(
+            "  {}) {:<20} {}",
+            i + 1,
+            wt.slug,
+            crate::git::current_branch(&wt.path)
+        );
+    }
+    eprint!("{} ", t!("ui.which_worktree", max = candidates.len()));
+    io::stderr().flush()?;
+    let mut answer = String::new();
+    io::stdin().read_line(&mut answer)?;
+    let answer = answer.trim();
+    // A bare ENTER takes the first line — the best match, which is what one aimed at.
+    if answer.is_empty() {
+        return Ok(0);
+    }
+    answer
+        .parse::<usize>()
+        .ok()
+        .filter(|n| (1..=candidates.len()).contains(n))
+        .map(|n| n - 1)
+        .with_context(|| t!("err.cancelled").to_string())
+}
+
+/// The user's shell, by name — used to point at the right `wt shell-init` line.
+fn current_shell_name() -> String {
+    std::env::var("SHELL")
+        .ok()
+        .and_then(|s| {
+            Path::new(&s)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        })
+        .filter(|n| matches!(n.as_str(), "bash" | "zsh" | "fish"))
+        .unwrap_or_else(|| "bash".to_string())
 }
 
 fn is_terminal_editor(editor: &str) -> bool {

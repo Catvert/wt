@@ -9,6 +9,7 @@
 extern crate rust_i18n;
 
 mod ansi;
+mod complete;
 mod config;
 mod fuzzy;
 mod git;
@@ -25,8 +26,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
-use clap_complete::Shell;
+use clap::{Parser, Subcommand, ValueEnum};
+// `Shell` on its own would read as the `wt shell` subcommand two screens below.
+use clap_complete::Shell as CompletionShell;
 
 use config::Project;
 use ops::App;
@@ -40,7 +42,13 @@ use ops::App;
 )]
 struct Cli {
     /// Starting directory used to find the project (default: current directory).
-    #[arg(short = 'C', long, global = true, value_name = "DIR")]
+    #[arg(
+        short = 'C',
+        long,
+        global = true,
+        value_name = "DIR",
+        value_hint = clap::ValueHint::DirPath
+    )]
     dir: Option<PathBuf>,
 
     #[command(subcommand)]
@@ -62,10 +70,11 @@ enum Cmd {
     New {
         slug: String,
         /// Branch to check out. Defaults to the wt.toml `branch` template.
+        #[arg(add = complete::branches())]
         branch: Option<String>,
         /// Where a branch that does not exist yet starts: dev, origin/main, a tag, a
         /// commit. Defaults to the main repository's HEAD.
-        #[arg(long, value_name = "REF")]
+        #[arg(long, value_name = "REF", add = complete::start_points())]
         from: Option<String>,
         /// Option passed to hooks, available as {{opt.key}}. Repeatable.
         #[arg(long = "set", value_name = "KEY=VALUE")]
@@ -73,30 +82,59 @@ enum Cmd {
     },
     /// Starts a worktree (up hooks).
     Up {
+        #[arg(add = complete::slugs())]
         slug: String,
         #[arg(long = "set", value_name = "KEY=VALUE")]
         set: Vec<String>,
     },
     /// Stops a worktree (down hooks). The checkout and state are kept.
-    Down { slug: String },
+    Down {
+        #[arg(add = complete::slugs())]
+        slug: String,
+    },
     /// Lists the worktrees and their state.
     Ls,
     /// Details of one worktree.
-    Show { slug: String },
+    Show {
+        #[arg(add = complete::slugs())]
+        slug: String,
+    },
     /// Removes a worktree (pre_rm/post_rm hooks). The branch is kept.
     Rm {
+        #[arg(add = complete::slugs())]
         slug: String,
         #[arg(long, short)]
         yes: bool,
     },
+    /// Opens a shell at the worktree root (to run claude, a build, a rebase…).
+    ///
+    /// Without a slug: the only worktree, or a menu. `exit` comes back here.
+    Shell {
+        #[arg(add = complete::slugs())]
+        slug: Option<String>,
+    },
+    /// Changes directory to a worktree — needs `wt shell-init` (see below).
+    ///
+    /// A slug, a fragment of one (`wt cd auth` finds `fix-auth`), or nothing for a menu.
+    Cd {
+        #[arg(add = complete::slugs())]
+        slug: Option<String>,
+    },
+    /// Writes the shell function that makes `wt cd` work.
+    ///
+    /// `eval "$(wt shell-init bash)"` in ~/.bashrc / ~/.zshrc, or
+    /// `wt shell-init fish > ~/.config/fish/functions/wt.fish`.
+    ShellInit { shell: InitShell },
     /// Opens a worktree in an editor.
     Ide {
+        #[arg(add = complete::slugs())]
         slug: String,
         /// Editor command. Defaults to WT_IDE, [editor] command, EDITOR, then PATH.
         editor: Option<String>,
     },
     /// Opens one of the worktree's addresses in the browser ([open]).
     Open {
+        #[arg(add = complete::slugs())]
         slug: String,
         /// Address to open: a full URL, or a fragment of a label ("tenant acme").
         /// Without a target, the first address — the application's.
@@ -107,7 +145,9 @@ enum Cmd {
     },
     /// Runs a wt.toml task on a worktree.
     Run {
+        #[arg(add = complete::tasks())]
         task: String,
+        #[arg(add = complete::slugs())]
         slug: String,
         /// Extra arguments, available as {{args}}.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -116,13 +156,26 @@ enum Cmd {
     /// Lists the tasks declared in wt.toml.
     Tasks,
     /// Prints a worktree's path (`cd "$(wt path demo)"`).
-    Path { slug: String },
+    Path {
+        #[arg(add = complete::slugs())]
+        slug: String,
+    },
     /// Prints the worktree root and the wt.toml in use.
     Root,
-    /// Writes a shell completion script to stdout.
+    /// Writes the shell completion script to stdout.
     ///
-    /// `wt completions zsh > ~/.zfunc/_wt`
-    Completions { shell: Shell },
+    /// `wt completions zsh > ~/.zfunc/_wt`. It completes slugs, tasks and branches by
+    /// asking the binary, so it stays right as worktrees come and go.
+    Completions { shell: CompletionShell },
+}
+
+/// Shells `wt shell-init` knows how to write a function for. Fewer than the completions
+/// support: this one is hand-written shell, and only what we can actually test ships.
+#[derive(Clone, Copy, ValueEnum)]
+enum InitShell {
+    Bash,
+    Zsh,
+    Fish,
 }
 
 fn main() {
@@ -134,18 +187,31 @@ fn main() {
 
 fn try_main() -> Result<()> {
     i18n::init();
+    // `COMPLETE=<shell> wt …`: answer the shell and exit. Before anything can write to
+    // stdout, which is where the candidates go.
+    complete::serve();
     let cli = Cli::parse();
     let start = match cli.dir {
         Some(d) => d,
         None => std::env::current_dir().with_context(|| t!("err.no_cwd").to_string())?,
     };
 
-    // Both of these must work outside a project: `init` creates the config, and
-    // completions are generated at package build time, far from any repository.
+    // These must work outside a project: `init` creates the config, completions are
+    // generated at package build time far from any repository, and a shell's rc file
+    // sources `shell-init` once for every project it will ever visit.
     match &cli.cmd {
         Some(Cmd::Init { preset, force }) => return cmd_init(&start, *preset, *force),
         Some(Cmd::Completions { shell }) => {
-            clap_complete::generate(*shell, &mut Cli::command(), "wt", &mut std::io::stdout());
+            return complete::registration(&shell.to_string(), &mut std::io::stdout());
+        }
+        Some(Cmd::ShellInit { shell }) => {
+            print!(
+                "{}",
+                match shell {
+                    InitShell::Bash | InitShell::Zsh => include_str!("../templates/shell-init.sh"),
+                    InitShell::Fish => include_str!("../templates/shell-init.fish"),
+                }
+            );
             return Ok(());
         }
         _ => {}
@@ -155,7 +221,9 @@ fn try_main() -> Result<()> {
 
     match cli.cmd {
         None => ui::run(Arc::clone(&app)),
-        Some(Cmd::Init { .. }) | Some(Cmd::Completions { .. }) => unreachable!(),
+        Some(Cmd::Init { .. }) | Some(Cmd::Completions { .. }) | Some(Cmd::ShellInit { .. }) => {
+            unreachable!()
+        }
         Some(Cmd::New {
             slug,
             branch,
@@ -177,6 +245,11 @@ fn try_main() -> Result<()> {
             Ok(())
         }
         Some(Cmd::Rm { slug, yes }) => app.cmd_rm(&slug, yes),
+        Some(Cmd::Shell { slug }) => {
+            let slug = app.choose_slug(slug.as_deref())?;
+            app.cmd_shell(&slug)
+        }
+        Some(Cmd::Cd { slug }) => app.cmd_cd(slug.as_deref()),
         Some(Cmd::Ide { slug, editor }) => app.cmd_ide(&slug, editor.as_deref()),
         Some(Cmd::Open { slug, target, list }) => app.cmd_open(&slug, target.as_deref(), list),
         Some(Cmd::Run { task, slug, args }) => app.cmd_run(&task, &slug, &args),

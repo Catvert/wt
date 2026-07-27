@@ -20,6 +20,9 @@ err:
   no_cwd: "cannot read the current directory"
   unknown_worktree: "unknown worktree '%{slug}'"
   config_exists: "%{path} already exists (--force to overwrite)"
+  no_completions: "no completion script for '%{shell}'"
+  ambiguous: "several worktrees match: %{slugs}"
+  cancelled: "cancelled"
 
 label:
   url: "url"
@@ -57,6 +60,7 @@ hint:
   no_matching_url: "no address matches '%{target}' (see: wt open %{slug} --list)"
   invalid_slug: "invalid slug '%{slug}': only [a-z0-9-], like a DNS label"
   bad_set: "--set expects key=value, got '%{value}'"
+  no_shell_integration: "shell integration missing — add `eval \"$(wt shell-init %{shell})\"` to your rc file, or use `wt shell %{slug}`"
 
 info:
   creating: "creating worktree (%{branch})"
@@ -128,6 +132,7 @@ ui:
   empty_slug: "empty slug — creation cancelled"
   start_options: "start options for %{slug} (key=value, space separated)"
   open_title: "open · %{slug}"
+  which_worktree: "which worktree? [1-%{max}, ENTER for 1]"
 
 key:
   navigate: "↑↓ navigate"
@@ -135,6 +140,7 @@ key:
   new: "n new"
   start: "s start"
   stop: "d stop"
+  shell: "c shell"
   editor: "e editor"
   browser: "o browser"
   task: "t task"
@@ -146,6 +152,7 @@ help:
   new: "n  create a worktree (branch, start point, then slug)"
   start: "s  start (up hooks)        S  start with explicit options"
   stop: "d  stop (down hooks)"
+  shell: "c  shell at the worktree root (exit comes back here)"
   editor: "e  open in an editor"
   browser: "o  open in the browser ([open] url)"
   task: "t  run a wt.toml task"
@@ -155,13 +162,15 @@ help:
   actions: "ENTER  every action        q  quit"
   picker: "In a menu: type to search (fuzzy, spaces narrow), ↑↓ or ^N/^P move, TAB ticks, ESC clears then closes."
   panel: "Action output shows in a panel (↑↓ scroll, ENTER closes)."
-  interactive: "Only interactive tasks and the editor take the terminal back."
+  interactive: "Only the shell, interactive tasks and the editor take the terminal back."
 
 action:
   new: "n · create a worktree"
   start: "s · start"
   start_opts: "S · start with options"
   stop: "d · stop"
+  shell: "c · shell in the worktree"
+  shell_detail: "exit comes back"
   editor: "e · open in an editor"
   browser: "o · open in the browser"
   task: "t · run a task"

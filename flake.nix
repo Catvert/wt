@@ -40,7 +40,10 @@
           nativeCheckInputs = [ pkgs.git ];
 
           # Completions come from the binary itself, so they can never drift from the
-          # actual commands. Skipped when cross-compiling, where it cannot be run.
+          # actual commands. What gets installed is the script that asks `wt` for the
+          # candidates on every TAB — safe to write to a file here, where the script and
+          # the binary it calls come out of the same build.
+          # Skipped when cross-compiling, where the binary cannot be run.
           postInstall = pkgs.lib.optionalString
             (pkgs.stdenv.buildPlatform.canExecute pkgs.stdenv.hostPlatform) ''
               installShellCompletion --cmd wt \

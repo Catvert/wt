@@ -12,7 +12,11 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-clap_complete = "4"
+# Dynamic completions: the candidates for a slug or a task can only come from the
+# project at hand, which a script generated at install time cannot know. The feature
+# is upstream-unstable, hence the pinned minor — a bump is a decision, not a side
+# effect of `cargo update`.
+clap_complete = { version = "4.6", features = ["unstable-dynamic"] }
 # Features trimmed to what the interface uses: by default ratatui also builds the
 # calendar widget and its `time` dependency, which we have no use for.
 ratatui = { version = "0.30", default-features = false, features = [

@@ -20,6 +20,9 @@ err:
   no_cwd: "répertoire courant illisible"
   unknown_worktree: "worktree '%{slug}' inconnu"
   config_exists: "%{path} existe déjà (--force pour l'écraser)"
+  no_completions: "pas de script de complétion pour '%{shell}'"
+  ambiguous: "plusieurs worktrees correspondent : %{slugs}"
+  cancelled: "annulé"
 
 label:
   url: "url"
@@ -57,6 +60,7 @@ hint:
   no_matching_url: "aucune adresse ne correspond à '%{target}' (voir : wt open %{slug} --list)"
   invalid_slug: "slug invalide '%{slug}' : uniquement [a-z0-9-], comme un label DNS"
   bad_set: "--set attend clé=valeur, reçu '%{value}'"
+  no_shell_integration: "intégration shell absente — ajoute `eval \"$(wt shell-init %{shell})\"` à ton fichier rc, ou utilise `wt shell %{slug}`"
 
 info:
   creating: "création du worktree (%{branch})"
@@ -128,6 +132,7 @@ ui:
   empty_slug: "slug vide — création annulée"
   start_options: "options de démarrage de %{slug} (clé=valeur, séparés par un espace)"
   open_title: "ouvrir · %{slug}"
+  which_worktree: "quel worktree ? [1-%{max}, ENTRÉE pour 1]"
 
 key:
   navigate: "↑↓ naviguer"
@@ -135,6 +140,7 @@ key:
   new: "n nouveau"
   start: "s démarrer"
   stop: "d arrêter"
+  shell: "c shell"
   editor: "e éditeur"
   browser: "o navigateur"
   task: "t tâche"
@@ -146,6 +152,7 @@ help:
   new: "n  créer un worktree (branche, point de départ, puis slug)"
   start: "s  démarrer (hooks up)      S  démarrer en saisissant des options"
   stop: "d  arrêter (hooks down)"
+  shell: "c  shell à la racine du worktree (exit ramène ici)"
   editor: "e  ouvrir dans un éditeur"
   browser: "o  ouvrir dans le navigateur ([open] url)"
   task: "t  lancer une tâche du wt.toml"
@@ -155,13 +162,15 @@ help:
   actions: "ENTRÉE  toutes les actions  q  quitter"
   picker: "Dans un menu : tape pour chercher (fuzzy, l'espace affine), ↑↓ ou ^N/^P déplacent, TAB coche, ÉCHAP efface puis ferme."
   panel: "La sortie des actions s'affiche dans un panneau (↑↓ défiler, ENTRÉE ferme)."
-  interactive: "Seules les tâches interactives et l'éditeur reprennent le terminal."
+  interactive: "Seuls le shell, les tâches interactives et l'éditeur reprennent le terminal."
 
 action:
   new: "n · créer un worktree"
   start: "s · démarrer"
   start_opts: "S · démarrer avec des options"
   stop: "d · arrêter"
+  shell: "c · shell dans le worktree"
+  shell_detail: "exit ramène ici"
   editor: "e · ouvrir dans un éditeur"
   browser: "o · ouvrir dans le navigateur"
   task: "t · lancer une tâche"
