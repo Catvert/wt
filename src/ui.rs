@@ -822,7 +822,7 @@ impl Ui {
                 Style::default().fg(Color::DarkGray),
             ),
             (Some((question, _)), false) if !out.failed => (
-                format!(" {question} [o/n] "),
+                format!(" {question} [{}] ", t!("hint.yes_no")),
                 Style::default().fg(Color::Yellow),
             ),
             _ => (
