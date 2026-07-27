@@ -109,6 +109,7 @@ ui:
   multi_hint: "TAB coche · ENTRÉE valide"
   no_match: "aucune correspondance — ÉCHAP efface la recherche"
   input_hint: "ENTRÉE valide · ÉCHAP annule"
+  back_hint: "⌫  retour"
   confirm_hint: "o/N · toute autre touche annule"
   mouse_on: "souris activée"
   mouse_off: "souris coupée — la sélection de texte du terminal est rendue"
@@ -161,6 +162,7 @@ help:
   mouse: "Souris : clic sélectionne, double-clic ouvre ; molette défile."
   actions: "ENTRÉE  toutes les actions  q  quitter"
   picker: "Dans un menu : tape pour chercher (fuzzy, l'espace affine), ↑↓ ou ^N/^P déplacent, TAB coche, ÉCHAP efface puis ferme."
+  back: "⌫  revient d'une question — la branche, le slug, une réponse déjà donnée — dès qu'il n'a plus rien à effacer ; ^U vide un champ."
   panel: "La sortie des actions s'affiche dans un panneau (↑↓ défiler, ENTRÉE ferme)."
   interactive: "Seuls le shell, les tâches interactives et l'éditeur reprennent le terminal."
 

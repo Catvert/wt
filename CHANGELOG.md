@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Going back a step in the interface: `⌫` returns to the previous question — the branch,
+  the start point, the slug, an answer already given — with what was chosen there under
+  the cursor again, and the questions that followed asked anew. It only steps back with
+  nothing left to delete (an empty search, an empty field); the window shows `⌫  back`
+  when it applies. `ESC` still gives up on the action as a whole.
+- `^U` empties an input field and `^W` cuts its last word, as they already did in a
+  picker's search box. A control key no longer types its letter into the field.
+
 ## [0.3.0] — 2026-07-27
 
 ### Added

@@ -109,6 +109,7 @@ ui:
   multi_hint: "TAB toggles · ENTER confirms"
   no_match: "no match — ESC clears the search"
   input_hint: "ENTER confirms · ESC cancels"
+  back_hint: "⌫  back"
   confirm_hint: "y/N · any other key cancels"
   mouse_on: "mouse enabled"
   mouse_off: "mouse disabled — terminal text selection is yours again"
@@ -161,6 +162,7 @@ help:
   mouse: "Mouse: click selects, double-click opens; wheel scrolls."
   actions: "ENTER  every action        q  quit"
   picker: "In a menu: type to search (fuzzy, spaces narrow), ↑↓ or ^N/^P move, TAB ticks, ESC clears then closes."
+  back: "⌫  goes back one question — the branch, the slug, an answer already given — once there is nothing left to delete; ^U empties a field."
   panel: "Action output shows in a panel (↑↓ scroll, ENTER closes)."
   interactive: "Only the shell, interactive tasks and the editor take the terminal back."
 

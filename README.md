@@ -155,6 +155,12 @@ branch** (an existing one, or `＋ new branch`); for a new one, **where it start
 preselected and marked `●`; then the worktree's **slug**. The `wt.toml` questions, if
 any, come next.
 
+`⌫` steps **back one question** — to the branch, to the slug, to an answer already given —
+with what was chosen there under the cursor again, and the questions that followed asked
+anew. It only does so with nothing left to delete (an empty search, an empty field —
+`^U` empties one), and the window says `⌫  back` when it applies. `ESC` still gives up on
+the whole thing.
+
 On the command line that is `wt new <slug> [branch] --from <ref>`. `--from` takes
 anything git takes as a start point (a local branch, `origin/dev`, a tag, a commit) and
 only applies to a branch that **does not exist yet**: a branch already written has its
@@ -245,7 +251,8 @@ bottom right shows what is left.
 
 Since typing feeds the search, moving around is done with the arrows or with `^N`/`^P`
 (`^J`/`^K`), `TAB` ticks a box in a multiple choice, `^U` clears the search, and `ESC`
-clears it first, then closes the picker.
+clears it first, then closes the picker. On an empty search `⌫` goes back a step when the
+picker came after another question.
 
 ### Action output
 

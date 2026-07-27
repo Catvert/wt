@@ -226,6 +226,9 @@ struct Pending {
     slug: String,
     opts: BTreeMap<String, String>,
     queue: VecDeque<Prompt>,
+    /// The question on screen, with the state that preceded it. It joins the history
+    /// only once answered: a step is somewhere to come back to, never where you are.
+    asked: Option<Step>,
 }
 
 enum PendingAction {
@@ -234,6 +237,32 @@ enum PendingAction {
         from: Option<String>,
     },
     Up,
+}
+
+/// A step already crossed, kept so BACKSPACE can walk back to it.
+///
+/// Creating a worktree asks four or five questions in a row: picking the wrong branch
+/// should cost one key, not a cancelled action started over from the list.
+enum Step {
+    /// The action menu, and what was chosen in it.
+    Action(String),
+    /// Branch picker of a creation, and the branch that was picked.
+    Branch(String),
+    /// Start point of a branch being created.
+    Base(String),
+    /// Slug input: what the pickers before it settled, and what was typed.
+    Slug {
+        branch: Option<String>,
+        from: Option<String>,
+        slug: String,
+    },
+    /// A wt.toml question, with the answers and the remaining questions exactly as they
+    /// stood when it was asked — going back to it must un-ask what followed.
+    Prompt {
+        prompt: Prompt,
+        opts: BTreeMap<String, String>,
+        queue: VecDeque<Prompt>,
+    },
 }
 
 enum Mode {
@@ -320,6 +349,8 @@ struct Ui {
     message: Option<String>,
     /// Action waiting for the answers to the project's questions.
     pending: Option<Pending>,
+    /// Steps crossed in the flow under way, most recent last. Empty outside a flow.
+    history: Vec<Step>,
     /// Output of the running action, shown in a panel.
     output: Option<Output>,
     /// Areas of the last frame, to know what a click targets.
@@ -351,6 +382,7 @@ pub fn run(app: Arc<App>) -> Result<()> {
         preview: Vec::new(),
         message: None,
         pending: None,
+        history: Vec::new(),
         output: None,
         zones: Zones::default(),
         list_state: ListState::default(),
@@ -491,6 +523,7 @@ impl Ui {
                 // Second click on the already selected row: open the actions, like
                 // ENTER on the keyboard.
                 if double {
+                    self.history.clear();
                     self.open_action_menu();
                 }
             }
@@ -866,6 +899,7 @@ impl Ui {
             t!("help.actions").to_string(),
             String::new(),
             t!("help.picker").to_string(),
+            t!("help.back").to_string(),
             String::new(),
             t!("help.panel").to_string(),
             t!("help.interactive").to_string(),
@@ -954,10 +988,19 @@ impl Ui {
         self.zones.popup = area;
         self.pick_state.select(sel);
         f.render_widget(Clear, area);
-        let hint = if multi {
-            format!(" — {} ", t!("ui.multi_hint"))
-        } else {
+        // What the keyboard offers here, told in the title: a picker that came after
+        // another one accepts a step back, one on its own does not.
+        let mut hints = Vec::new();
+        if multi {
+            hints.push(t!("ui.multi_hint").to_string());
+        }
+        if !self.history.is_empty() {
+            hints.push(t!("ui.back_hint").to_string());
+        }
+        let hint = if hints.is_empty() {
             " ".to_string()
+        } else {
+            format!(" — {} ", hints.join(" · "))
         };
         // The query sits at the bottom, fzf-style: the list stays where the eye is.
         let prompt = Line::from(vec![
@@ -997,14 +1040,18 @@ impl Ui {
 
     fn draw_input(&self, f: &mut Frame, title: &str, buffer: &str) {
         let area = centered(f.area(), 60, 20);
+        // BACKSPACE deletes as long as there is something to delete: it only steps back
+        // on an empty field, so the hint only shows up once it is true.
+        let hint = if self.history.is_empty() || !buffer.is_empty() {
+            t!("ui.input_hint").to_string()
+        } else {
+            format!("{} · {}", t!("ui.input_hint"), t!("ui.back_hint"))
+        };
         f.render_widget(Clear, area);
         f.render_widget(
             Paragraph::new(vec![
                 Line::from(format!("> {buffer}▏")),
-                Line::from(Span::styled(
-                    t!("ui.input_hint").to_string(),
-                    Style::default().fg(Color::DarkGray),
-                )),
+                Line::from(Span::styled(hint, Style::default().fg(Color::DarkGray))),
             ])
             .block(
                 Block::default()
@@ -1077,14 +1124,37 @@ impl Ui {
                             self.pending = None;
                             self.message = Some(t!("ui.cancelled").to_string());
                         }
+                        self.history.clear();
                         self.mode = Mode::List;
                     }
                     KeyCode::Backspace => {
-                        if let Mode::Input { buffer, .. } = &mut self.mode {
+                        // Nothing left to delete: the key steps back to the previous
+                        // question rather than doing nothing at all.
+                        let empty =
+                            matches!(&self.mode, Mode::Input { buffer, .. } if buffer.is_empty());
+                        if empty {
+                            self.go_back();
+                        } else if let Mode::Input { buffer, .. } = &mut self.mode {
                             buffer.pop();
                         }
                     }
-                    KeyCode::Char(c) => {
+                    // Same as in a picker's search box, and what empties a suggested slug
+                    // in one key — which is what a step back then asks for.
+                    KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        if let Mode::Input { buffer, .. } = &mut self.mode {
+                            buffer.clear();
+                        }
+                    }
+                    KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        if let Mode::Input { buffer, .. } = &mut self.mode {
+                            drop_last_word(buffer);
+                        }
+                    }
+                    KeyCode::Char(c)
+                        if !key
+                            .modifiers
+                            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                    {
                         if let Mode::Input { buffer, .. } = &mut self.mode {
                             buffer.push(c);
                         }
@@ -1107,6 +1177,15 @@ impl Ui {
     fn on_key_pick(&mut self, key: KeyEvent, term: &mut DefaultTerminal) -> Result<()> {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
+        // BACKSPACE with nothing to delete: in a flow that came from an earlier question,
+        // it goes back to it. Checked before the picker is borrowed, since stepping back
+        // replaces it.
+        if key.code == KeyCode::Backspace
+            && matches!(&self.mode, Mode::Pick(p) if p.filter.is_empty())
+            && self.go_back()
+        {
+            return Ok(());
+        }
         let Mode::Pick(p) = &mut self.mode else {
             return Ok(());
         };
@@ -1149,7 +1228,81 @@ impl Ui {
             self.pending = None;
             self.message = Some(t!("ui.cancelled").to_string());
         }
+        self.history.clear();
         self.mode = Mode::List;
+    }
+
+    /// Walks one step back in the flow under way.
+    ///
+    /// Returns false when there is nothing to go back to: the key that asked for it then
+    /// keeps its usual meaning.
+    fn go_back(&mut self) -> bool {
+        let Some(step) = self.history.pop() else {
+            return false;
+        };
+        match step {
+            Step::Prompt {
+                prompt,
+                opts,
+                queue,
+            } => {
+                let Some(pending) = &mut self.pending else {
+                    return true;
+                };
+                // The answer given last time preselects: coming back to a question is
+                // usually about the one before it, and this one is confirmed with ENTER.
+                let previous = pending.opts.get(&prompt.name).cloned();
+                pending.opts = opts.clone();
+                pending.queue = queue.clone();
+                // Asked again, so current again: the step behind it is the one below in
+                // the history, not itself.
+                pending.asked = Some(Step::Prompt {
+                    prompt: prompt.clone(),
+                    opts,
+                    queue,
+                });
+                let (slug, phase, opts) =
+                    (pending.slug.clone(), pending.phase, pending.opts.clone());
+                self.open_prompt(&prompt, &slug, &opts, phase, previous.as_deref());
+            }
+            // Back before the action was settled: the answers collected for it go with
+            // it, and the questions are asked again from the start if it is chosen anew.
+            Step::Action(key) => {
+                self.pending = None;
+                self.open_action_menu();
+                self.preselect(&key);
+            }
+            Step::Branch(key) => {
+                self.pending = None;
+                self.open_branch_picker();
+                self.preselect(&key);
+            }
+            Step::Base(key) => {
+                self.pending = None;
+                self.open_base_picker();
+                self.preselect(&key);
+            }
+            Step::Slug { branch, from, slug } => {
+                self.pending = None;
+                self.ask_slug(branch, from);
+                // What was typed comes back, not the suggestion: a slug corrected by hand
+                // must not be lost to a step back.
+                if let Mode::Input { buffer, .. } = &mut self.mode {
+                    *buffer = slug;
+                }
+            }
+        }
+        true
+    }
+
+    /// Puts the cursor back on what this step had chosen.
+    fn preselect(&mut self, key: &str) {
+        let Mode::Pick(p) = &mut self.mode else {
+            return;
+        };
+        if let Some(idx) = p.items.iter().position(|c| c.key == key) {
+            p.select(idx);
+        }
     }
 
     /// Keyboard while the output panel is up: scrolling, and closing once the action is
@@ -1192,6 +1345,8 @@ impl Ui {
 
     fn on_key_list(&mut self, key: KeyEvent, term: &mut DefaultTerminal) -> Result<()> {
         let slug = self.current().map(|r| r.slug.clone());
+        // Anything started from the list starts a flow of its own: nothing behind it.
+        self.history.clear();
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit = true,
@@ -1301,6 +1456,7 @@ impl Ui {
             slug,
             opts: known,
             queue,
+            asked: None,
         });
         self.advance(term)
     }
@@ -1317,10 +1473,23 @@ impl Ui {
             let slug = pending.slug.clone();
             let opts = pending.opts.clone();
             let phase = pending.phase;
+            let queue = pending.queue.clone();
             if !self.app.prompt_applies(&prompt, &slug, &opts, phase) {
                 continue;
             }
-            self.open_prompt(&prompt, &slug, &opts, phase);
+            // The question that was on screen has been answered: it becomes somewhere to
+            // come back to. This one takes its place, with the answers and the questions
+            // left as they stand — a step back to it has to un-ask what follows it,
+            // `when` conditions included.
+            let step = Step::Prompt {
+                prompt: prompt.clone(),
+                opts: opts.clone(),
+                queue,
+            };
+            if let Some(answered) = self.pending.as_mut().and_then(|p| p.asked.replace(step)) {
+                self.history.push(answered);
+            }
+            self.open_prompt(&prompt, &slug, &opts, phase, None);
             return Ok(());
         }
 
@@ -1356,17 +1525,23 @@ impl Ui {
         Ok(())
     }
 
+    /// `previous` is the answer this question already had, when it is being asked again
+    /// after a step back: it takes the `default`'s place.
     fn open_prompt(
         &mut self,
         prompt: &Prompt,
         slug: &str,
         opts: &BTreeMap<String, String>,
         phase: Ask,
+        previous: Option<&str>,
     ) {
+        let start = previous
+            .map(str::to_string)
+            .or_else(|| prompt.default.clone());
         if prompt.kind == PromptKind::Text {
             self.mode = Mode::Input {
                 title: prompt.title().to_string(),
-                buffer: prompt.default.clone().unwrap_or_default(),
+                buffer: start.unwrap_or_default(),
                 kind: InputKind::Prompt {
                     name: prompt.name.clone(),
                 },
@@ -1377,8 +1552,7 @@ impl Ui {
         let multi = prompt.kind == PromptKind::Multi;
         // A `default` pre-checks (multi) or preselects (single choice): that is what
         // lets the common case be confirmed with a single ENTER.
-        let preset: Vec<String> = prompt
-            .default
+        let preset: Vec<String> = start
             .iter()
             .flat_map(|d| d.split(&prompt.separator))
             .map(|s| s.trim().to_string())
@@ -1689,9 +1863,18 @@ impl Ui {
         match kind {
             // A branch that exists is its own start point; a new one still has to be
             // told where it begins.
-            PickKind::Branch if picked.key == "__new__" => self.open_base_picker(),
-            PickKind::Branch => self.ask_slug(Some(picked.key), None),
-            PickKind::BranchBase => self.ask_slug(None, Some(picked.key)),
+            PickKind::Branch if picked.key == "__new__" => {
+                self.history.push(Step::Branch(picked.key));
+                self.open_base_picker();
+            }
+            PickKind::Branch => {
+                self.history.push(Step::Branch(picked.key.clone()));
+                self.ask_slug(Some(picked.key), None);
+            }
+            PickKind::BranchBase => {
+                self.history.push(Step::Base(picked.key.clone()));
+                self.ask_slug(None, Some(picked.key));
+            }
             PickKind::Task => {
                 if let Some(s) = slug {
                     let task = picked.key;
@@ -1731,50 +1914,60 @@ impl Ui {
                     }
                 }
             }
-            PickKind::Action => match picked.key.as_str() {
-                "new" => self.open_branch_picker(),
-                "task" => self.open_task_picker(),
-                "ide" => self.open_editor_picker(),
-                "shell" => {
-                    if let Some(s) = slug {
-                        self.exec(term, move |app| app.cmd_shell(&s))?;
-                    }
+            PickKind::Action => {
+                // The menu is a step like any other for what it opens; what it runs on
+                // the spot (a shell, a stop) has nothing to come back to.
+                if matches!(
+                    picked.key.as_str(),
+                    "new" | "up" | "up-opts" | "ide" | "open" | "task"
+                ) {
+                    self.history.push(Step::Action(picked.key.clone()));
                 }
-                "up" => {
-                    if let Some(s) = slug {
-                        self.start(PendingAction::Up, s, term)?;
+                match picked.key.as_str() {
+                    "new" => self.open_branch_picker(),
+                    "task" => self.open_task_picker(),
+                    "ide" => self.open_editor_picker(),
+                    "shell" => {
+                        if let Some(s) = slug {
+                            self.exec(term, move |app| app.cmd_shell(&s))?;
+                        }
                     }
-                }
-                "up-opts" => {
-                    if let Some(s) = slug {
-                        self.mode = Mode::Input {
-                            title: t!("ui.start_options", slug = s).to_string(),
-                            buffer: String::new(),
-                            kind: InputKind::Opts { slug: s },
-                        };
+                    "up" => {
+                        if let Some(s) = slug {
+                            self.start(PendingAction::Up, s, term)?;
+                        }
                     }
-                }
-                "down" => {
-                    if let Some(s) = slug {
-                        let title = t!("title.stopping", slug = s).to_string();
-                        self.spawn(title, move |app| app.cmd_down(&s));
+                    "up-opts" => {
+                        if let Some(s) = slug {
+                            self.mode = Mode::Input {
+                                title: t!("ui.start_options", slug = s).to_string(),
+                                buffer: String::new(),
+                                kind: InputKind::Opts { slug: s },
+                            };
+                        }
                     }
-                }
-                "open" => {
-                    if let Some(s) = slug {
-                        self.open_link_picker(&s);
+                    "down" => {
+                        if let Some(s) = slug {
+                            let title = t!("title.stopping", slug = s).to_string();
+                            self.spawn(title, move |app| app.cmd_down(&s));
+                        }
                     }
-                }
-                "rm" => {
-                    if let Some(s) = slug {
-                        self.mode = Mode::Confirm {
-                            question: t!("confirm.remove", slug = s).to_string(),
-                            action: ConfirmAction::Remove(s),
-                        };
+                    "open" => {
+                        if let Some(s) = slug {
+                            self.open_link_picker(&s);
+                        }
                     }
+                    "rm" => {
+                        if let Some(s) = slug {
+                            self.mode = Mode::Confirm {
+                                question: t!("confirm.remove", slug = s).to_string(),
+                                action: ConfirmAction::Remove(s),
+                            };
+                        }
+                    }
+                    _ => {}
                 }
-                _ => {}
-            },
+            }
             // Handled before the match: the value is already recorded.
             PickKind::Prompt { .. } => {}
         }
@@ -1792,6 +1985,11 @@ impl Ui {
                     self.message = Some(t!("ui.empty_slug").to_string());
                     return Ok(());
                 }
+                self.history.push(Step::Slug {
+                    branch: branch.clone(),
+                    from: from.clone(),
+                    slug: slug.clone(),
+                });
                 self.start(PendingAction::New { branch, from }, slug, term)?;
             }
             InputKind::Opts { slug } => {
@@ -1853,6 +2051,9 @@ impl Ui {
             self.message = Some(t!("ui.action_running").to_string());
             return;
         }
+        // The action is on its way: the questions that led to it are no longer somewhere
+        // to go back to, and a follow-up ("start it now?") starts a flow of its own.
+        self.history.clear();
         let (tx, rx) = mpsc::channel();
         let app = Arc::clone(&self.app);
         let sender = tx.clone();

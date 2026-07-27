@@ -158,6 +158,11 @@ part** — `dev`, `master`, la branche d'une collègue… — celle en checkout 
 principal étant présélectionnée et marquée `●` ; puis le **slug** du worktree. Les
 questions du `wt.toml` viennent ensuite, s'il y en a.
 
+`⌫` revient **d'une question** — la branche, le slug, une réponse déjà donnée — avec ce
+qui y avait été choisi de nouveau sous le curseur, et les questions suivantes reposées.
+Il ne le fait que lorsqu'il n'a plus rien à effacer (recherche vide, champ vide — `^U` le
+vide), et la fenêtre affiche alors `⌫  retour`. `ÉCHAP` abandonne toujours l'ensemble.
+
 En ligne de commande, c'est `wt new <slug> [branche] --from <ref>`. `--from` accepte tout
 ce que git accepte comme point de départ (branche locale, `origin/dev`, un tag, un
 commit) et ne s'applique qu'à une branche **qui n'existe pas encore** : une branche déjà
@@ -255,7 +260,8 @@ compteur en bas à droite indique ce qui reste.
 
 Comme la frappe alimente la recherche, la navigation se fait aux flèches ou avec
 `^N`/`^P` (`^J`/`^K`), `TAB` coche dans un choix multiple, `^U` efface la recherche, et
-`ÉCHAP` l'efface d'abord, puis ferme le sélecteur.
+`ÉCHAP` l'efface d'abord, puis ferme le sélecteur. Sur une recherche vide, `⌫` revient
+d'un pas quand le sélecteur suit une autre question.
 
 ### Sortie des actions
 
