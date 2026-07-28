@@ -16,6 +16,18 @@ All notable changes to this project are documented here. The format follows
 - `^U` empties an input field and `^W` cuts its last word, as they already did in a
   picker's search box. A control key no longer types its letter into the field.
 
+### Changed
+
+- `c` in the interface now opens the shell in a **terminal window of its own**: the list
+  stays where it is, and the session outlives it. The emulator is `WT_TERMINAL_WINDOW`,
+  then `[editor] terminal_window`, then whichever known one is installed — Windows
+  Terminal under WSL, ghostty, WezTerm, kitty, Alacritty, foot, GNOME Terminal, Konsole,
+  xfce4-terminal, xterm, Terminal.app on macOS. The window gets the same shell and the
+  same `$WT_*` variables as before. A machine with no emulator — a bare TTY, an ssh
+  session — keeps the old behaviour, the interface stepping aside for the session, and
+  says so in its help; `WT_TERMINAL_WINDOW=""` asks for it outright. `wt shell` on the
+  command line is unchanged.
+
 ## [0.3.0] — 2026-07-27
 
 ### Added

@@ -192,8 +192,9 @@ wt shell-init fish > ~/.config/fish/functions/wt.fish
 The function only intercepts `wt cd`; every other command goes to the binary untouched.
 Without it, `wt cd demo` still prints the path and says which line is missing.
 
-In the interface it is `c`, or "shell in the worktree" in the action menu: the interface
-steps aside and comes back when the session ends.
+In the interface it is `c`, or "shell in the worktree" in the action menu: a terminal
+window opens on the worktree and the list stays where it is (see below when the machine
+has no emulator to open one with).
 
 Both take **a fragment of a slug** — `wt cd auth` finds `fix-auth` — and both ask when
 what was typed leaves several worktrees, or when nothing was typed at all:
@@ -212,6 +213,16 @@ A shell opened by `wt shell` (or by `c`) inherits the worktree's variables, the 
 the hooks get: `$WT_SLUG`, `$WT_PATH`, `$WT_PORT_VITE`… Which shell it is comes from
 `WT_TERMINAL`, then `[editor] terminal`, then `$SHELL`. `wt cd`, being your own shell,
 exports nothing.
+
+From the interface, `c` opens that shell in a **terminal window of its own**: the list
+stays where it is, and the session outlives it. The emulator is `WT_TERMINAL_WINDOW`,
+then `[editor] terminal_window`, then whichever known one is installed — Windows Terminal
+under WSL, otherwise ghostty, WezTerm, kitty, Alacritty, foot, GNOME Terminal, Konsole,
+xfce4-terminal, xterm, and Terminal.app on macOS. A machine with none of them — a bare
+TTY, an ssh session — keeps the old behaviour: the shell takes the terminal the interface
+runs in, and `exit` comes back to it. Setting `WT_TERMINAL_WINDOW=""` asks for that
+behaviour outright. `wt shell` on the command line always stays in the current terminal:
+it has nothing to come back to.
 
 For a command run often enough to deserve a name, a task beats either — a three-line
 `[tasks.claude]` with `interactive = true`, then `wt run claude demo`.
@@ -275,10 +286,10 @@ afterwards. The editor does the same.
 - **after a creation**, if the project has `[hooks] up`, the panel asks "start the
   services now?" — `o` chains (including the `wt.toml` questions), any other key closes;
 - **after a GUI editor opens**, the interface offers a terminal at the worktree root —
-  something an IDE window does not give you. The shell is `WT_TERMINAL`, then
-  `[editor] terminal` from the `wt.toml`, then `$SHELL`. (An editor living in the
-  terminal, like `nvim`, replaces the process: nothing can be chained after it, so the
-  question is not asked.)
+  something an IDE window does not give you. It opens exactly as `c` does. The shell is
+  `WT_TERMINAL`, then `[editor] terminal` from the `wt.toml`, then `$SHELL`. (An editor
+  living in the terminal, like `nvim`, replaces the process: nothing can be chained after
+  it, so the question is not asked.)
 
 ## The `wt.toml` file
 
@@ -323,6 +334,7 @@ source = "./scripts/urls.sh"         # extra addresses: url<TAB>label
 [editor]
 command = "phpstorm"                 # WT_IDE from the environment still wins
 terminal = "zsh"                     # shell offered after the editor opens
+terminal_window = "kitty"            # emulator opening it in a window of its own
 
 [tasks.shell]
 description = "shell inside the container"

@@ -883,7 +883,13 @@ impl Ui {
         if self.app.has_down() {
             lines.push(t!("help.stop").to_string());
         }
-        lines.push(t!("help.shell").to_string());
+        // What `c` does depends on the machine: promising a terminal back after `exit`
+        // where a window opens would be a hint that is simply not true.
+        lines.push(if self.app.terminal_window().is_some() {
+            t!("help.shell_window").to_string()
+        } else {
+            t!("help.shell").to_string()
+        });
         lines.push(t!("help.editor").to_string());
         if self.app.has_open() {
             lines.push(t!("help.browser").to_string());
@@ -902,7 +908,11 @@ impl Ui {
             t!("help.back").to_string(),
             String::new(),
             t!("help.panel").to_string(),
-            t!("help.interactive").to_string(),
+            if self.app.terminal_window().is_some() {
+                t!("help.interactive_window").to_string()
+            } else {
+                t!("help.interactive").to_string()
+            },
             String::new(),
             format!(
                 "{}: {}",
@@ -1403,9 +1413,7 @@ impl Ui {
             }
             KeyCode::Char('c') => {
                 if let Some(s) = slug {
-                    // The shell takes the terminal: the interface steps aside and comes
-                    // back when the session ends, exactly as an interactive task does.
-                    self.exec(term, move |app| app.cmd_shell(&s))?;
+                    self.open_shell(s, term)?;
                 }
             }
             KeyCode::Char('e') => self.open_editor_picker(),
@@ -1622,7 +1630,11 @@ impl Ui {
         items.push(choice(
             "shell",
             &t!("action.shell"),
-            &t!("action.shell_detail"),
+            &if self.app.terminal_window().is_some() {
+                t!("action.shell_detail_window")
+            } else {
+                t!("action.shell_detail")
+            },
         ));
         items.push(choice("ide", &t!("action.editor"), ""));
         if self.app.has_open() {
@@ -1929,7 +1941,7 @@ impl Ui {
                     "ide" => self.open_editor_picker(),
                     "shell" => {
                         if let Some(s) = slug {
-                            self.exec(term, move |app| app.cmd_shell(&s))?;
+                            self.open_shell(s, term)?;
                         }
                     }
                     "up" => {
@@ -2013,10 +2025,7 @@ impl Ui {
                 Ok(())
             }
             ConfirmAction::StartAfterNew(slug) => self.start(PendingAction::Up, slug, term),
-            ConfirmAction::TerminalIn(slug) => {
-                // Un shell veut le terminal : l'interface s'efface le temps de la session.
-                self.exec(term, move |app| app.cmd_shell(&slug))
-            }
+            ConfirmAction::TerminalIn(slug) => self.open_shell(slug, term),
         }
     }
 
@@ -2073,6 +2082,26 @@ impl Ui {
             scroll: 0,
             follow,
         });
+    }
+
+    /// Opens a shell in the worktree.
+    ///
+    /// In a window of its own when the machine has an emulator to open one with: the
+    /// list stays where it is, and the session outlives it. Otherwise the shell takes
+    /// this terminal, the interface stepping aside until the session ends — a machine
+    /// with no emulator (a bare TTY, an ssh session) still gets its shell.
+    fn open_shell(&mut self, slug: String, term: &mut DefaultTerminal) -> Result<()> {
+        match self.app.cmd_shell_window(&slug) {
+            Ok(true) => {
+                self.message = Some(t!("ui.shell_window", slug = slug).to_string());
+                Ok(())
+            }
+            Ok(false) => self.exec(term, move |app| app.cmd_shell(&slug)),
+            Err(e) => {
+                self.message = Some(t!("ui.failed", error = format!("{e:#}")).to_string());
+                Ok(())
+            }
+        }
     }
 
     /// Hands the terminal back to the action while it runs.

@@ -46,6 +46,7 @@ post_rm = []
 # [editor]
 # command = "nvim"
 # terminal = "zsh"   # shell offered after the editor opens
+# terminal_window = "kitty"   # emulator opening it in a window of its own
 
 [tasks]
 # `wt run <name> <slug> [args…]` — this is where most of a service-less project lives.

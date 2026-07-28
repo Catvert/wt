@@ -133,6 +133,7 @@ ui:
   empty_slug: "slug vide — création annulée"
   start_options: "options de démarrage de %{slug} (clé=valeur, séparés par un espace)"
   open_title: "ouvrir · %{slug}"
+  shell_window: "shell ouvert dans une nouvelle fenêtre · %{slug}"
   which_worktree: "quel worktree ? [1-%{max}, ENTRÉE pour 1]"
 
 key:
@@ -154,6 +155,7 @@ help:
   start: "s  démarrer (hooks up)      S  démarrer en saisissant des options"
   stop: "d  arrêter (hooks down)"
   shell: "c  shell à la racine du worktree (exit ramène ici)"
+  shell_window: "c  shell à la racine du worktree, dans une nouvelle fenêtre"
   editor: "e  ouvrir dans un éditeur"
   browser: "o  ouvrir dans le navigateur ([open] url)"
   task: "t  lancer une tâche du wt.toml"
@@ -165,6 +167,7 @@ help:
   back: "⌫  revient d'une question — la branche, le slug, une réponse déjà donnée — dès qu'il n'a plus rien à effacer ; ^U vide un champ."
   panel: "La sortie des actions s'affiche dans un panneau (↑↓ défiler, ENTRÉE ferme)."
   interactive: "Seuls le shell, les tâches interactives et l'éditeur reprennent le terminal."
+  interactive_window: "Seuls les tâches interactives et l'éditeur reprennent le terminal — le shell ouvre sa propre fenêtre."
 
 action:
   new: "n · créer un worktree"
@@ -173,6 +176,7 @@ action:
   stop: "d · arrêter"
   shell: "c · shell dans le worktree"
   shell_detail: "exit ramène ici"
+  shell_detail_window: "dans une nouvelle fenêtre"
   editor: "e · ouvrir dans un éditeur"
   browser: "o · ouvrir dans le navigateur"
   task: "t · lancer une tâche"

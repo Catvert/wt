@@ -267,6 +267,10 @@ pub struct Editor {
     /// Shell opened in the worktree when a terminal is requested.
     /// Defaults to `WT_TERMINAL`, then `$SHELL`.
     pub terminal: Option<String>,
+    /// Terminal emulator opening that shell in a window of its own.
+    /// Defaults to `WT_TERMINAL_WINDOW`, then whichever known emulator is installed.
+    /// With none, the shell takes over the terminal the interface runs in.
+    pub terminal_window: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]

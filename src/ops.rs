@@ -9,7 +9,7 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::Sender;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use anyhow::{bail, Context, Result};
 
@@ -40,6 +40,8 @@ pub struct App {
     /// Where messages go: the terminal (command line) or, while the interface runs an
     /// action, the panel showing it as it happens.
     sink: Mutex<Option<Sender<Msg>>>,
+    /// The emulator opening a terminal window, looked up on first use.
+    window_term: OnceLock<Option<String>>,
 }
 
 impl App {
@@ -49,6 +51,7 @@ impl App {
             project,
             root,
             sink: Mutex::new(None),
+            window_term: OnceLock::new(),
         })
     }
 
@@ -684,11 +687,7 @@ impl App {
     pub fn cmd_shell(&self, slug: &str) -> Result<()> {
         let st = self.require_existing(slug)?;
         let dir = self.dir(slug);
-        let shell = std::env::var("WT_TERMINAL")
-            .ok()
-            .or_else(|| self.project.config.editor.terminal.clone())
-            .or_else(|| std::env::var("SHELL").ok())
-            .unwrap_or_else(|| "sh".to_string());
+        let shell = self.shell_command();
         self.info(format!("{shell} — {}", dir.display()));
         // Interactive: inherited stdio, and we wait for the session to end.
         let status = Command::new(&shell)
@@ -701,6 +700,95 @@ impl App {
             self.info(t!("info.session_ended").to_string());
         }
         Ok(())
+    }
+
+    /// The same shell, in a window of its own — the interface it was asked from stays
+    /// where it is, and the worktree keeps a terminal after the session ends.
+    ///
+    /// `false` when no emulator could be found or started: the caller falls back to
+    /// [`cmd_shell`](Self::cmd_shell), which always works. Nothing is printed either
+    /// way — the interface is drawing, and a stray line would land on top of it.
+    pub fn cmd_shell_window(&self, slug: &str) -> Result<bool> {
+        let st = self.require_existing(slug)?;
+        let Some(bin) = self.terminal_window() else {
+            return Ok(false);
+        };
+        let dir = self.dir(slug);
+        let env = state::env(&self.vars(slug, &st));
+        let argv = window_argv(bin, &dir, &self.shell_command(), &env);
+
+        let mut cmd = Command::new(bin);
+        cmd.args(&argv)
+            .current_dir(&dir)
+            .envs(&env)
+            // The interface goes on reading the keyboard and drawing: the window must
+            // take neither our input nor our screen.
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+
+        // An emulator lives as long as its window; osascript only carries the order to
+        // Terminal.app and leaves, which is what makes its failure worth waiting for.
+        if bin.ends_with("osascript") {
+            return Ok(cmd.status().map(|s| s.success()).unwrap_or(false));
+        }
+        Ok(cmd.spawn().is_ok())
+    }
+
+    /// Shell opened in the worktree: `WT_TERMINAL`, then `[editor] terminal`, then the
+    /// one this session runs.
+    fn shell_command(&self) -> String {
+        std::env::var("WT_TERMINAL")
+            .ok()
+            .or_else(|| self.project.config.editor.terminal.clone())
+            .or_else(|| std::env::var("SHELL").ok())
+            .unwrap_or_else(|| "sh".to_string())
+    }
+
+    /// The emulator that opens a terminal window, if this machine has one.
+    ///
+    /// Looked up once: the answer cannot change while the interface runs, and it is
+    /// asked for on every frame — the shell action words itself differently depending
+    /// on whether it opens a window or takes this terminal.
+    pub fn terminal_window(&self) -> Option<&str> {
+        self.window_term
+            .get_or_init(|| {
+                if let Some(named) = std::env::var("WT_TERMINAL_WINDOW")
+                    .ok()
+                    .or_else(|| self.project.config.editor.terminal_window.clone())
+                {
+                    // Named outright, it is taken as it stands — an empty value is how
+                    // one asks for the old behaviour back.
+                    return (!named.trim().is_empty()).then_some(named);
+                }
+                let mut candidates: Vec<&str> = Vec::new();
+                if util::is_wsl() {
+                    // Windows Terminal is the one WSL actually has: a Linux emulator
+                    // there needs a display server the machine often has not got.
+                    candidates.push("wt.exe");
+                }
+                candidates.extend([
+                    "ghostty",
+                    "wezterm",
+                    "kitty",
+                    "alacritty",
+                    "foot",
+                    "gnome-terminal",
+                    "konsole",
+                    "xfce4-terminal",
+                ]);
+                if cfg!(target_os = "macos") {
+                    // Terminal.app, driven by AppleScript — after the emulators one
+                    // installs on purpose, before the fallbacks nobody chooses.
+                    candidates.push("osascript");
+                }
+                candidates.extend(["x-terminal-emulator", "xterm"]);
+                candidates
+                    .into_iter()
+                    .find(|bin| util::which(bin).is_some())
+                    .map(|bin| bin.to_string())
+            })
+            .as_deref()
     }
 
     /// Prints a worktree's path, for the shell function `wt shell-init` installs.
@@ -1049,8 +1137,78 @@ fn ide_path(dir: &Path, editor: &str) -> PathBuf {
     dir.to_path_buf()
 }
 
+/// What a given emulator wants to be told to open `shell` in `dir`.
+///
+/// The worktree's variables are handed to the shell explicitly rather than left to be
+/// inherited: gnome-terminal hands the job to a server process that never saw our
+/// environment, and under WSL it crosses to the Windows side and back. `env` is on
+/// every machine that has any of these emulators.
+fn window_argv(bin: &str, dir: &Path, shell: &str, env: &BTreeMap<String, String>) -> Vec<String> {
+    let d = dir.display().to_string();
+    let name = Path::new(bin)
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| bin.to_string());
+
+    let mut cmd: Vec<String> = vec!["env".to_string()];
+    cmd.extend(env.iter().map(|(k, v)| format!("{k}={v}")));
+    cmd.push(shell.to_string());
+
+    let head: Vec<String> = match name.as_str() {
+        // A Windows Terminal tab holding a WSL session: the Linux path is `wsl.exe`'s
+        // business, not the emulator's.
+        "wt.exe" => {
+            let mut a = vec!["new-tab".to_string(), "wsl.exe".to_string()];
+            a.extend(["--cd".to_string(), d, "-e".to_string()]);
+            a
+        }
+        // Terminal.app takes a shell line, not an argv: it is written out in full.
+        "osascript" => return terminal_app_argv(dir, shell, env),
+        "wezterm" => vec![
+            "start".to_string(),
+            "--cwd".to_string(),
+            d,
+            "--".to_string(),
+        ],
+        "kitty" => vec!["--directory".to_string(), d],
+        "foot" => vec![format!("--working-directory={d}")],
+        "ghostty" => vec![format!("--working-directory={d}"), "-e".to_string()],
+        "alacritty" => vec!["--working-directory".to_string(), d, "-e".to_string()],
+        "konsole" => vec!["--workdir".to_string(), d, "-e".to_string()],
+        "gnome-terminal" | "mate-terminal" => {
+            vec![format!("--working-directory={d}"), "--".to_string()]
+        }
+        "xfce4-terminal" => vec![format!("--working-directory={d}"), "-x".to_string()],
+        // xterm and anything named in the wt.toml: `-e` is the convention they share,
+        // and the directory comes from the cwd the emulator is started in.
+        _ => vec!["-e".to_string()],
+    };
+    [head, cmd].concat()
+}
+
+/// The AppleScript that makes Terminal.app open a window in the worktree.
+fn terminal_app_argv(dir: &Path, shell: &str, env: &BTreeMap<String, String>) -> Vec<String> {
+    let mut line = format!("cd {} && exec env", shell_quote(dir));
+    for (k, v) in env {
+        line.push_str(&format!(" {k}={}", quote(v)));
+    }
+    line.push(' ');
+    line.push_str(shell);
+    let script = line.replace('\\', r"\\").replace('"', "\\\"");
+    vec![
+        "-e".to_string(),
+        format!("tell application \"Terminal\" to do script \"{script}\""),
+        "-e".to_string(),
+        "tell application \"Terminal\" to activate".to_string(),
+    ]
+}
+
 fn shell_quote(path: &Path) -> String {
-    format!("'{}'", path.display().to_string().replace('\'', r"'\''"))
+    quote(&path.display().to_string())
+}
+
+fn quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
 }
 
 #[cfg(test)]
@@ -1077,5 +1235,60 @@ mod tests {
         assert_eq!(m["tenants"], "a,b");
         assert_eq!(m["queue"], "1");
         assert!(parse_sets(&["oups".into()]).is_err());
+    }
+
+    fn demo_env() -> BTreeMap<String, String> {
+        BTreeMap::from([("WT_SLUG".to_string(), "demo".to_string())])
+    }
+
+    #[test]
+    fn a_terminal_window_opens_on_the_worktree() {
+        let dir = Path::new("/w/demo");
+        let env = demo_env();
+
+        // Under WSL the emulator is a Windows process: the Linux path and the variables
+        // are wsl.exe's business.
+        assert_eq!(
+            window_argv("wt.exe", dir, "fish", &env),
+            [
+                "new-tab",
+                "wsl.exe",
+                "--cd",
+                "/w/demo",
+                "-e",
+                "env",
+                "WT_SLUG=demo",
+                "fish"
+            ]
+        );
+        assert_eq!(
+            window_argv("/usr/bin/kitty", dir, "fish", &env),
+            ["--directory", "/w/demo", "env", "WT_SLUG=demo", "fish"]
+        );
+        assert_eq!(
+            window_argv("gnome-terminal", dir, "bash", &env),
+            [
+                "--working-directory=/w/demo",
+                "--",
+                "env",
+                "WT_SLUG=demo",
+                "bash"
+            ]
+        );
+        // Unknown — xterm, or a command named in the wt.toml: the `-e` convention, the
+        // directory coming from the cwd the emulator is started in.
+        assert_eq!(
+            window_argv("xterm", dir, "sh", &env),
+            ["-e", "env", "WT_SLUG=demo", "sh"]
+        );
+    }
+
+    #[test]
+    fn terminal_app_is_told_in_its_own_language() {
+        let env = BTreeMap::from([("WT_PATH".to_string(), "/w/a b".to_string())]);
+        let argv = terminal_app_argv(Path::new("/w/a b"), "zsh", &env);
+        assert_eq!(argv[0], "-e");
+        assert!(argv[1].contains(r"cd '/w/a b' && exec env WT_PATH='/w/a b' zsh"));
+        assert!(argv[1].starts_with("tell application \"Terminal\""));
     }
 }

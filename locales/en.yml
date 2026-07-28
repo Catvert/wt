@@ -133,6 +133,7 @@ ui:
   empty_slug: "empty slug — creation cancelled"
   start_options: "start options for %{slug} (key=value, space separated)"
   open_title: "open · %{slug}"
+  shell_window: "shell opened in a new window · %{slug}"
   which_worktree: "which worktree? [1-%{max}, ENTER for 1]"
 
 key:
@@ -154,6 +155,7 @@ help:
   start: "s  start (up hooks)        S  start with explicit options"
   stop: "d  stop (down hooks)"
   shell: "c  shell at the worktree root (exit comes back here)"
+  shell_window: "c  shell at the worktree root, in a new terminal window"
   editor: "e  open in an editor"
   browser: "o  open in the browser ([open] url)"
   task: "t  run a wt.toml task"
@@ -165,6 +167,7 @@ help:
   back: "⌫  goes back one question — the branch, the slug, an answer already given — once there is nothing left to delete; ^U empties a field."
   panel: "Action output shows in a panel (↑↓ scroll, ENTER closes)."
   interactive: "Only the shell, interactive tasks and the editor take the terminal back."
+  interactive_window: "Only interactive tasks and the editor take the terminal back — the shell opens its own window."
 
 action:
   new: "n · create a worktree"
@@ -173,6 +176,7 @@ action:
   stop: "d · stop"
   shell: "c · shell in the worktree"
   shell_detail: "exit comes back"
+  shell_detail_window: "in a new window"
   editor: "e · open in an editor"
   browser: "o · open in the browser"
   task: "t · run a task"

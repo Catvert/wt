@@ -96,6 +96,7 @@ url = "http://{{host}}:{{port.web}}"
 # [editor]
 # command = "nvim"
 # terminal = "zsh"   # shell offered after the editor opens
+# terminal_window = "kitty"   # emulator opening it in a window of its own
 
 [tasks]
 # `wt run <name> <slug> [args…]`

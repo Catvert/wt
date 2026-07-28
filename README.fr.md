@@ -196,8 +196,9 @@ wt shell-init fish > ~/.config/fish/functions/wt.fish
 La fonction n'intercepte que `wt cd` ; toute autre commande part au binaire telle quelle.
 Sans elle, `wt cd demo` affiche quand même le chemin et rappelle la ligne qui manque.
 
-Dans l'interface c'est `c`, ou « shell dans le worktree » dans le menu d'actions :
-l'interface s'efface et reprend à la fin de la session.
+Dans l'interface c'est `c`, ou « shell dans le worktree » dans le menu d'actions : une
+fenêtre de terminal s'ouvre sur le worktree et la liste reste où elle est (voir plus bas
+quand la machine n'a aucun émulateur pour en ouvrir une).
 
 Les deux acceptent **un fragment de slug** — `wt cd auth` trouve `fix-auth` — et les deux
 posent la question quand ce qui a été tapé en laisse plusieurs, ou quand rien n'a été
@@ -218,6 +219,16 @@ Un shell ouvert par `wt shell` (ou par `c`) hérite des variables du worktree, l
 que les hooks : `$WT_SLUG`, `$WT_PATH`, `$WT_PORT_VITE`… Lequel c'est vient de
 `WT_TERMINAL`, puis `[editor] terminal`, puis `$SHELL`. `wt cd`, qui est ton propre shell,
 n'exporte rien.
+
+Depuis l'interface, `c` ouvre ce shell dans une **fenêtre de terminal à lui** : la liste
+reste où elle est, et la session lui survit. L'émulateur vient de `WT_TERMINAL_WINDOW`,
+puis `[editor] terminal_window`, puis de celui qui est installé — Windows Terminal sous
+WSL, sinon ghostty, WezTerm, kitty, Alacritty, foot, GNOME Terminal, Konsole,
+xfce4-terminal, xterm, et Terminal.app sur macOS. Une machine qui n'en a aucun — un TTY
+nu, une session ssh — garde l'ancien comportement : le shell prend le terminal où tourne
+l'interface, et `exit` y ramène. `WT_TERMINAL_WINDOW=""` demande ce comportement
+explicitement. `wt shell` en ligne de commande reste toujours dans le terminal courant :
+il n'a nulle part où revenir.
 
 Pour une commande lancée assez souvent pour mériter un nom, une tâche vaut mieux que les
 deux — un `[tasks.claude]` de trois lignes avec `interactive = true`, puis
@@ -285,10 +296,10 @@ reprend la main. C'est aussi le cas de l'éditeur.
   les services maintenant ? » — `o` enchaîne (questions du `wt.toml` comprises), toute
   autre touche ferme ;
 - **après l'ouverture d'un éditeur graphique**, l'interface propose un terminal à la
-  racine du worktree — ce qu'une fenêtre d'IDE ne donne pas. Le shell est `WT_TERMINAL`,
-  sinon `[editor] terminal` du `wt.toml`, sinon `$SHELL`. (Un éditeur qui vit dans le
-  terminal, comme `nvim`, remplace le process : rien ne peut être enchaîné derrière, la
-  question n'est donc pas posée.)
+  racine du worktree — ce qu'une fenêtre d'IDE ne donne pas. Il s'ouvre exactement comme
+  avec `c`. Le shell est `WT_TERMINAL`, sinon `[editor] terminal` du `wt.toml`, sinon
+  `$SHELL`. (Un éditeur qui vit dans le terminal, comme `nvim`, remplace le process :
+  rien ne peut être enchaîné derrière, la question n'est donc pas posée.)
 
 ## Le fichier `wt.toml`
 
@@ -334,6 +345,7 @@ source = "./scripts/urls.sh"         # adresses supplémentaires : url<TAB>libel
 [editor]
 command = "phpstorm"                 # WT_IDE de l'environnement reste prioritaire
 terminal = "zsh"                     # shell proposé après l'ouverture de l'éditeur
+terminal_window = "kitty"            # émulateur qui l'ouvre dans une fenêtre à lui
 
 [tasks.shell]
 description = "shell dans le conteneur"
