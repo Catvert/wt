@@ -238,7 +238,9 @@ enum PendingAction {
     },
     Up,
     /// A wt.toml task whose `prompt` list feeds its `{{args}}`.
-    Task { task: String },
+    Task {
+        task: String,
+    },
 }
 
 /// A step already crossed, kept so BACKSPACE can walk back to it.
@@ -1541,7 +1543,12 @@ impl Ui {
                     .app
                     .task_prompts(&task)
                     .iter()
-                    .filter_map(|p| pending.opts.get(&p.name).map(|v| (p.separator.clone(), v.clone())))
+                    .filter_map(|p| {
+                        pending
+                            .opts
+                            .get(&p.name)
+                            .map(|v| (p.separator.clone(), v.clone()))
+                    })
                     .flat_map(|(sep, v)| {
                         v.split(sep.as_str())
                             .map(str::trim)
