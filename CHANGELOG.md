@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-01
+
 ### Added
 
 - Tasks can declare questions: `prompt = ["name"]` on a `[tasks.*]` entry lists
