@@ -137,6 +137,8 @@ pub enum Ask {
     /// Before `wt new`.
     New,
     Both,
+    /// Never asked by a phase: only when a task lists the prompt in its `prompt` field.
+    Task,
 }
 
 impl Ask {
@@ -238,6 +240,11 @@ pub struct Task {
     /// a panel neither forwards keystrokes nor renders direct output.
     #[serde(default)]
     pub interactive: bool,
+    /// Names of `[[prompt]]` entries the interface asks before the run; the answers
+    /// become the task's `{{args}}` (multi values split on the prompt's separator).
+    /// On the command line, arguments are passed directly and nothing is asked.
+    #[serde(default)]
+    pub prompt: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Default, Clone, Copy, PartialEq, Eq)]

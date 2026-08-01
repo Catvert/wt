@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Tasks can declare questions: `prompt = ["name"]` on a `[tasks.*]` entry lists
+  `[[prompt]]` entries the interface asks before the run — same pickers as `new`/`up`,
+  `source` included — and the answers become the task's `{{args}}` (a `multi` value is
+  split on its separator). They are per-run inputs: always asked, never remembered in
+  the worktree's options. On the command line, arguments are passed directly and
+  nothing is asked. A prompt meant only for tasks takes `ask = "task"`, which no phase
+  ever triggers.
 - Going back a step in the interface: `⌫` returns to the previous question — the branch,
   the start point, the slug, an answer already given — with what was chosen there under
   the cursor again, and the questions that followed asked anew. It only steps back with

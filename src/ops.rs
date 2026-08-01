@@ -169,6 +169,25 @@ impl App {
             .collect()
     }
 
+    /// Questions a task declares (`prompt = ["…"]`), in the task's order. Always asked:
+    /// they are per-run inputs, never remembered options. Unknown names are ignored.
+    pub fn task_prompts(&self, task: &str) -> Vec<Prompt> {
+        let Some(t) = self.project.config.tasks.get(task) else {
+            return Vec::new();
+        };
+        t.prompt
+            .iter()
+            .filter_map(|name| {
+                self.project
+                    .config
+                    .prompts
+                    .iter()
+                    .find(|p| &p.name == name)
+                    .cloned()
+            })
+            .collect()
+    }
+
     /// Working directory for a prompt's commands: the worktree if it already exists
     /// (the `up` case), otherwise the main repository (the `new` case, nothing checked
     /// out yet).

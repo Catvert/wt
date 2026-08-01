@@ -237,6 +237,8 @@ enum PendingAction {
         from: Option<String>,
     },
     Up,
+    /// A wt.toml task whose `prompt` list feeds its `{{args}}`.
+    Task { task: String },
 }
 
 /// A step already crossed, kept so BACKSPACE can walk back to it.
@@ -1450,14 +1452,19 @@ impl Ui {
         slug: String,
         term: &mut DefaultTerminal,
     ) -> Result<()> {
-        let phase = match action {
+        let phase = match &action {
             PendingAction::New { .. } => Ask::New,
             PendingAction::Up => Ask::Up,
+            PendingAction::Task { .. } => Ask::Task,
         };
         // Answers already known (previous start) are not asked again but stay in the
-        // options passed along: `wt up` reproduces the previous setup.
+        // options passed along: `wt up` reproduces the previous setup. A task's
+        // questions are per-run inputs: always asked, whatever the state knows.
         let known = crate::state::load(&self.app.root, &slug).opts;
-        let queue = self.app.prompts_for(phase, &known).into();
+        let queue = match &action {
+            PendingAction::Task { task } => self.app.task_prompts(task).into(),
+            _ => self.app.prompts_for(phase, &known).into(),
+        };
         self.pending = Some(Pending {
             action,
             phase,
@@ -1470,7 +1477,7 @@ impl Ui {
     }
 
     /// Asks the next applicable question, or runs the action when none are left.
-    fn advance(&mut self, _term: &mut DefaultTerminal) -> Result<()> {
+    fn advance(&mut self, term: &mut DefaultTerminal) -> Result<()> {
         loop {
             let Some(pending) = &mut self.pending else {
                 return Ok(());
@@ -1528,6 +1535,31 @@ impl Ui {
             PendingAction::Up => {
                 let title = t!("title.starting", slug = slug).to_string();
                 self.spawn(title, move |app| app.cmd_up(&slug, &sets));
+            }
+            PendingAction::Task { task } => {
+                let args: Vec<String> = self
+                    .app
+                    .task_prompts(&task)
+                    .iter()
+                    .filter_map(|p| pending.opts.get(&p.name).map(|v| (p.separator.clone(), v.clone())))
+                    .flat_map(|(sep, v)| {
+                        v.split(sep.as_str())
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty())
+                            .map(String::from)
+                            .collect::<Vec<_>>()
+                    })
+                    .collect();
+                if args.is_empty() {
+                    self.message = Some(t!("ui.cancelled").to_string());
+                    return Ok(());
+                }
+                if self.app.task_is_interactive(&task) {
+                    self.exec(term, |app| app.cmd_run(&task, &slug, &args))?;
+                } else {
+                    let title = format!("{task} · {slug}");
+                    self.spawn(title, move |app| app.cmd_run(&task, &slug, &args));
+                }
             }
         }
         Ok(())
@@ -1890,6 +1922,11 @@ impl Ui {
             PickKind::Task => {
                 if let Some(s) = slug {
                     let task = picked.key;
+                    // A task with declared questions goes through the prompt queue
+                    // first; the answers become its arguments.
+                    if !self.app.task_prompts(&task).is_empty() {
+                        return self.start(PendingAction::Task { task }, s, term);
+                    }
                     // A shell or a `logs -f` wants the terminal: the panel can neither
                     // forward keystrokes nor render a full-screen display.
                     if self.app.task_is_interactive(&task) {
