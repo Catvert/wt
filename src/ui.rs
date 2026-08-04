@@ -311,8 +311,6 @@ enum ConfirmAction {
     Remove(String),
     /// Follow-up offered after a creation: start right away.
     StartAfterNew(String),
-    /// Follow-up offered after opening a GUI editor.
-    TerminalIn(String),
 }
 
 enum PickKind {
@@ -1953,21 +1951,7 @@ impl Ui {
             }
             PickKind::Editor => {
                 if let Some(s) = slug {
-                    let editor = picked.key;
-                    // A terminal editor replaces the process: nothing can be chained
-                    // after it. For an IDE window, on the other hand, a shell already
-                    // sitting in the worktree is what is most often missing.
-                    let terminal = !self.app.editor_is_terminal(&editor);
-                    {
-                        let s = s.clone();
-                        self.exec(term, move |app| app.cmd_ide(&s, Some(&editor)))?;
-                    }
-                    if terminal {
-                        self.mode = Mode::Confirm {
-                            question: t!("confirm.terminal", slug = s).to_string(),
-                            action: ConfirmAction::TerminalIn(s),
-                        };
-                    }
+                    self.open_editor(s, picked.key, term)?;
                 }
             }
             PickKind::Action => {
@@ -2069,7 +2053,6 @@ impl Ui {
                 Ok(())
             }
             ConfirmAction::StartAfterNew(slug) => self.start(PendingAction::Up, slug, term),
-            ConfirmAction::TerminalIn(slug) => self.open_shell(slug, term),
         }
     }
 
@@ -2148,10 +2131,50 @@ impl Ui {
         }
     }
 
+    /// Opens the worktree in an editor.
+    ///
+    /// An IDE window takes nothing from us: it is spawned, the list stays where it is,
+    /// and a line at the bottom says which one opened. Only an editor living in this
+    /// terminal — `nvim`, `helix` — is handed the screen, and that one never gives it
+    /// back: [`cmd_ide`](crate::ops::App::cmd_ide) replaces the session with it.
+    fn open_editor(
+        &mut self,
+        slug: String,
+        editor: String,
+        term: &mut DefaultTerminal,
+    ) -> Result<()> {
+        if self.app.editor_is_terminal(&editor) {
+            return self.exec(term, move |app| app.cmd_ide(&slug, Some(&editor)));
+        }
+        self.message = Some(match self.quiet(|app| app.cmd_ide(&slug, Some(&editor))) {
+            Ok(()) => t!("ui.editor_open", editor = editor, slug = slug).to_string(),
+            Err(e) => t!("ui.failed", error = format!("{e:#}")).to_string(),
+        });
+        Ok(())
+    }
+
+    /// Runs an action on the spot, keeping the screen and dropping its output.
+    ///
+    /// For what returns at once and has nothing to say — spawning an IDE window. A
+    /// panel would only be there to be dismissed, and a printed line would land on top
+    /// of the frame being drawn.
+    fn quiet<F>(&self, f: F) -> Result<()>
+    where
+        F: FnOnce(&App) -> Result<()>,
+    {
+        // Sending to a channel nobody reads from is what swallows the messages: `emit`
+        // ignores the failure, exactly as it would a full panel.
+        let (tx, _) = mpsc::channel();
+        self.app.set_sink(Some(tx));
+        let result = f(&self.app);
+        self.app.set_sink(None);
+        result
+    }
+
     /// Hands the terminal back to the action while it runs.
     ///
-    /// Reserved for what genuinely needs the terminal: a shell, a `logs -f`, an editor.
-    /// Everything else shows in the panel, without leaving the interface.
+    /// Reserved for what genuinely needs the terminal: a shell, a `logs -f`, a terminal
+    /// editor. Everything else shows in the panel, without leaving the interface.
     fn exec<F>(&mut self, term: &mut DefaultTerminal, f: F) -> Result<()>
     where
         F: FnOnce(&App) -> Result<()>,

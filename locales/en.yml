@@ -77,7 +77,6 @@ warn:
 confirm:
   remove_long: "remove worktree '%{slug}'? (pre_rm hooks run, the branch is kept)"
   start_now: "start %{slug}'s services now?"
-  terminal: "also open a terminal in %{slug}?"
   remove: "permanently remove worktree '%{slug}'?"
 
 state:
@@ -134,6 +133,7 @@ ui:
   start_options: "start options for %{slug} (key=value, space separated)"
   open_title: "open · %{slug}"
   shell_window: "shell opened in a new window · %{slug}"
+  editor_open: "%{editor} opened · %{slug}"
   which_worktree: "which worktree? [1-%{max}, ENTER for 1]"
 
 key:
@@ -166,8 +166,8 @@ help:
   picker: "In a menu: type to search (fuzzy, spaces narrow), ↑↓ or ^N/^P move, TAB ticks, ESC clears then closes."
   back: "⌫  goes back one question — the branch, the slug, an answer already given — once there is nothing left to delete; ^U empties a field."
   panel: "Action output shows in a panel (↑↓ scroll, ENTER closes)."
-  interactive: "Only the shell, interactive tasks and the editor take the terminal back."
-  interactive_window: "Only interactive tasks and the editor take the terminal back — the shell opens its own window."
+  interactive: "Only the shell, interactive tasks and terminal editors take the terminal back — an IDE opens its own window."
+  interactive_window: "Only interactive tasks and terminal editors take the terminal back — the shell and an IDE open their own window."
 
 action:
   new: "n · create a worktree"

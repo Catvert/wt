@@ -655,7 +655,18 @@ impl App {
         if let Ok(e) = std::env::var("EDITOR") {
             push(e);
         }
-        for e in ["phpstorm", "pstorm", "idea", "code", "zed", "nvim", "vim"] {
+        for e in [
+            "phpstorm",
+            "pstorm",
+            "idea",
+            "code",
+            "code-insiders",
+            "cursor",
+            "zed",
+            "zed-dev",
+            "nvim",
+            "vim",
+        ] {
             push(e.to_string());
         }
         out
