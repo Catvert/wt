@@ -1,6 +1,6 @@
 [package]
 name = "wt"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "Git worktree manager driven by a per-project wt.toml, independent of the project's language"
 license = "MIT"
