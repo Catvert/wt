@@ -188,6 +188,45 @@ fn a_new_branch_starts_where_it_is_told() {
 }
 
 #[test]
+fn a_new_branch_is_wired_to_origin() {
+    let project = project(BASIC);
+    let dir = project.path();
+    let config = |key: &str| {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["config", "--get", key])
+            .output()
+            .expect("git");
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    };
+
+    // Without a remote there is nothing to wire to — no config must be invented.
+    wt(dir).args(["new", "solo"]).output().unwrap();
+    assert_eq!(config("branch.wt/solo.remote"), None);
+
+    // With an origin, the fresh branch is ready for `git push` without `-u`.
+    let remote = tempfile::tempdir().expect("tempdir");
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        dir,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    wt(dir).args(["new", "feat"]).output().unwrap();
+    assert_eq!(config("branch.wt/feat.remote"), Some("origin".into()));
+    assert_eq!(
+        config("branch.wt/feat.merge"),
+        Some("refs/heads/wt/feat".into())
+    );
+
+    for slug in ["solo", "feat"] {
+        wt(dir).args(["rm", slug, "-y"]).output().unwrap();
+    }
+}
+
+#[test]
 fn init_writes_a_usable_config() {
     let dir = tempfile::tempdir().unwrap();
     git(dir.path(), &["init", "-q", "-b", "main"]);

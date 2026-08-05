@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A worktree branch that tracks nothing is wired to `origin/<branch>` at creation, so
+  the first `git push` from the worktree needs no `-u origin …`. Branches created from
+  an `origin/…` start point keep the tracking git already set up, and without an
+  `origin` remote nothing is invented.
+
 ## [0.4.0] — 2026-08-01
 
 ### Added

@@ -205,6 +205,7 @@ pub fn worktree_add(main: &Path, path: &Path, branch: &str, from: Option<&str>) 
         }
         reject_start_point(from)?;
         git(main, &["worktree", "add", &path_s, branch])?;
+        ensure_upstream(main, branch);
     } else if remote_branch_exists(main, branch) {
         // origin/foo -> local branch foo tracking it.
         let local = branch.split_once('/').map(|(_, b)| b).unwrap_or(branch);
@@ -222,8 +223,31 @@ pub fn worktree_add(main: &Path, path: &Path, branch: &str, from: Option<&str>) 
         // what someone branching off a remote expects.
         args.extend(from);
         git(main, &args)?;
+        ensure_upstream(main, branch);
     }
     Ok(())
+}
+
+/// Wires a branch that tracks nothing to `origin/<branch>`, so the first `git push`
+/// from the worktree needs no `-u origin …`. The remote ref usually does not exist
+/// yet — that is exactly what the push will create. Branches born with a start point
+/// on `origin/…` already track it (git's autoSetupMerge) and are left alone.
+fn ensure_upstream(main: &Path, branch: &str) {
+    let merge_key = format!("branch.{branch}.merge");
+    if git_opt(main, &["config", "--get", &merge_key]).is_some() {
+        return;
+    }
+    if git_opt(main, &["remote", "get-url", "origin"]).is_none() {
+        return;
+    }
+    let _ = git(
+        main,
+        &["config", &format!("branch.{branch}.remote"), "origin"],
+    );
+    let _ = git(
+        main,
+        &["config", &merge_key, &format!("refs/heads/{branch}")],
+    );
 }
 
 pub fn worktree_remove(main: &Path, path: &Path) -> Result<()> {
