@@ -23,6 +23,7 @@ err:
   no_completions: "no completion script for '%{shell}'"
   ambiguous: "several worktrees match: %{slugs}"
   cancelled: "cancelled"
+  interactive_tty: "the interactive interface needs a terminal (use a subcommand in scripts)"
 
 label:
   url: "url"
@@ -135,6 +136,11 @@ ui:
   shell_window: "shell opened in a new window · %{slug}"
   editor_open: "%{editor} opened · %{slug}"
   which_worktree: "which worktree? [1-%{max}, ENTER for 1]"
+
+skim:
+  worktree: "worktree"
+  hint: "type to filter · ENTER selects · ESC cancels"
+  hint_multi: "type to filter · TAB marks · ENTER confirms · ESC cancels"
 
 key:
   navigate: "↑↓ navigate"

@@ -48,6 +48,44 @@ fn stdout(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
+#[test]
+fn help_exposes_tui_and_default_mode_rejects_a_pipe() {
+    let project = project("branch = \"wt/{{slug}}\"\n");
+    let help = wt(project.path()).arg("--help").output().unwrap();
+    let help = stdout(&help);
+    assert!(help.contains("tui"), "{help}");
+
+    // `Command::output` gives the child pipes, not a TTY. The default Skim interface
+    // must fail clearly instead of entering raw mode or waiting for input forever.
+    let out = wt(project.path()).output().unwrap();
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("needs a terminal"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn a_missing_subcommand_argument_opens_the_fuzzy_picker() {
+    let project = project("branch = \"wt/{{slug}}\"\n");
+    wt(project.path()).args(["new", "demo"]).output().unwrap();
+
+    // A captured process has no TTY, so Skim cannot actually be driven here. Reaching
+    // its explicit terminal error proves `open` accepted the missing slug instead of
+    // letting Clap reject the command as an incomplete invocation.
+    let out = wt(project.path()).arg("open").output().unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("needs a terminal"), "{stderr}");
+    assert!(!stderr.contains("required arguments"), "{stderr}");
+
+    wt(project.path())
+        .args(["rm", "demo", "-y"])
+        .output()
+        .unwrap();
+}
+
 const BASIC: &str = r#"
 branch = "wt/{{slug}}"
 

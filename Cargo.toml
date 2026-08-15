@@ -1,6 +1,6 @@
 [package]
 name = "wt"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 description = "Git worktree manager driven by a per-project wt.toml, independent of the project's language"
 license = "MIT"
@@ -27,6 +27,11 @@ ratatui = { version = "0.30", default-features = false, features = [
 ] }
 rust-i18n = "4"
 serde = { version = "1", features = ["derive"] }
+# The default interface is a focused, fzf-style workflow.  We embed skim instead of
+# shelling out to `fzf`/`sk`, so installing wt still produces one self-contained binary.
+# CLI, image preview and IPC support are deliberately left out: the library picker is
+# all wt needs, and those features pull in a sizeable set of unrelated dependencies.
+skim = { version = "5.6", default-features = false }
 toml = "1"
 
 [profile.release]

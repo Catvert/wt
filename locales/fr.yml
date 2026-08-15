@@ -23,6 +23,7 @@ err:
   no_completions: "pas de script de complétion pour '%{shell}'"
   ambiguous: "plusieurs worktrees correspondent : %{slugs}"
   cancelled: "annulé"
+  interactive_tty: "l'interface interactive a besoin d'un terminal (utilise une sous-commande dans un script)"
 
 label:
   url: "url"
@@ -135,6 +136,11 @@ ui:
   shell_window: "shell ouvert dans une nouvelle fenêtre · %{slug}"
   editor_open: "%{editor} ouvert · %{slug}"
   which_worktree: "quel worktree ? [1-%{max}, ENTRÉE pour 1]"
+
+skim:
+  worktree: "worktree"
+  hint: "tape pour filtrer · ENTRÉE choisit · ÉCHAP annule"
+  hint_multi: "tape pour filtrer · TAB coche · ENTRÉE valide · ÉCHAP annule"
 
 key:
   navigate: "↑↓ naviguer"

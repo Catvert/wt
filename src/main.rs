@@ -15,6 +15,7 @@ mod fuzzy;
 mod git;
 mod i18n;
 mod ops;
+mod skim_ui;
 mod state;
 mod tmpl;
 mod ui;
@@ -38,7 +39,7 @@ use ops::App;
     name = "wt",
     version,
     about = "Git worktree manager, configured by a per-project wt.toml",
-    after_help = "Without a subcommand: opens the interactive interface."
+    after_help = "Without a subcommand: opens the Skim fuzzy interface. Use `wt tui` for the persistent Ratatui dashboard."
 )]
 struct Cli {
     /// Starting directory used to find the project (default: current directory).
@@ -83,26 +84,28 @@ enum Cmd {
     /// Starts a worktree (up hooks).
     Up {
         #[arg(add = complete::slugs())]
-        slug: String,
+        slug: Option<String>,
         #[arg(long = "set", value_name = "KEY=VALUE")]
         set: Vec<String>,
     },
     /// Stops a worktree (down hooks). The checkout and state are kept.
     Down {
         #[arg(add = complete::slugs())]
-        slug: String,
+        slug: Option<String>,
     },
     /// Lists the worktrees and their state.
     Ls,
+    /// Opens the persistent Ratatui dashboard.
+    Tui,
     /// Details of one worktree.
     Show {
         #[arg(add = complete::slugs())]
-        slug: String,
+        slug: Option<String>,
     },
     /// Removes a worktree (pre_rm/post_rm hooks). The branch is kept.
     Rm {
         #[arg(add = complete::slugs())]
-        slug: String,
+        slug: Option<String>,
         #[arg(long, short)]
         yes: bool,
     },
@@ -128,14 +131,14 @@ enum Cmd {
     /// Opens a worktree in an editor.
     Ide {
         #[arg(add = complete::slugs())]
-        slug: String,
+        slug: Option<String>,
         /// Editor command. Defaults to WT_IDE, [editor] command, EDITOR, then PATH.
         editor: Option<String>,
     },
     /// Opens one of the worktree's addresses in the browser ([open]).
     Open {
         #[arg(add = complete::slugs())]
-        slug: String,
+        slug: Option<String>,
         /// Address to open: a full URL, or a fragment of a label ("tenant acme").
         /// Without a target, the first address — the application's.
         target: Option<String>,
@@ -146,9 +149,9 @@ enum Cmd {
     /// Runs a wt.toml task on a worktree.
     Run {
         #[arg(add = complete::tasks())]
-        task: String,
+        task: Option<String>,
         #[arg(add = complete::slugs())]
-        slug: String,
+        slug: Option<String>,
         /// Extra arguments, available as {{args}}.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
@@ -158,7 +161,7 @@ enum Cmd {
     /// Prints a worktree's path (`cd "$(wt path demo)"`).
     Path {
         #[arg(add = complete::slugs())]
-        slug: String,
+        slug: Option<String>,
     },
     /// Prints the worktree root and the wt.toml in use.
     Root,
@@ -220,7 +223,7 @@ fn try_main() -> Result<()> {
     let app = Arc::new(App::new(Project::load(&start)?)?);
 
     match cli.cmd {
-        None => ui::run(Arc::clone(&app)),
+        None => skim_ui::run(&app),
         Some(Cmd::Init { .. }) | Some(Cmd::Completions { .. }) | Some(Cmd::ShellInit { .. }) => {
             unreachable!()
         }
@@ -230,10 +233,18 @@ fn try_main() -> Result<()> {
             from,
             set,
         }) => app.cmd_new(&slug, branch.as_deref(), from.as_deref(), &set),
-        Some(Cmd::Up { slug, set }) => app.cmd_up(&slug, &set),
-        Some(Cmd::Down { slug }) => app.cmd_down(&slug),
+        Some(Cmd::Up { slug, set }) => {
+            let slug = selected_slug(&app, slug)?;
+            app.cmd_up(&slug, &set)
+        }
+        Some(Cmd::Down { slug }) => {
+            let slug = selected_slug(&app, slug)?;
+            app.cmd_down(&slug)
+        }
         Some(Cmd::Ls) => app.cmd_ls(),
+        Some(Cmd::Tui) => ui::run(Arc::clone(&app)),
         Some(Cmd::Show { slug }) => {
+            let slug = selected_slug(&app, slug)?;
             let wt = app
                 .list()
                 .into_iter()
@@ -244,17 +255,40 @@ fn try_main() -> Result<()> {
             }
             Ok(())
         }
-        Some(Cmd::Rm { slug, yes }) => app.cmd_rm(&slug, yes),
+        Some(Cmd::Rm { slug, yes }) => {
+            let slug = selected_slug(&app, slug)?;
+            app.cmd_rm(&slug, yes)
+        }
         Some(Cmd::Shell { slug }) => {
-            let slug = app.choose_slug(slug.as_deref())?;
+            let slug = match slug {
+                Some(pattern) => app.choose_slug(Some(&pattern))?,
+                None => selected_slug(&app, None)?,
+            };
             app.cmd_shell(&slug)
         }
-        Some(Cmd::Cd { slug }) => app.cmd_cd(slug.as_deref()),
-        Some(Cmd::Ide { slug, editor }) => app.cmd_ide(&slug, editor.as_deref()),
-        Some(Cmd::Open { slug, target, list }) => app.cmd_open(&slug, target.as_deref(), list),
-        Some(Cmd::Run { task, slug, args }) => app.cmd_run(&task, &slug, &args),
+        Some(Cmd::Cd { slug }) => match slug {
+            Some(pattern) => app.cmd_cd(Some(&pattern)),
+            None => {
+                let slug = selected_slug(&app, None)?;
+                app.cmd_cd(Some(&slug))
+            }
+        },
+        Some(Cmd::Ide { slug, editor }) => {
+            let slug = selected_slug(&app, slug)?;
+            app.cmd_ide(&slug, editor.as_deref())
+        }
+        Some(Cmd::Open { slug, target, list }) => {
+            let slug = selected_slug(&app, slug)?;
+            app.cmd_open(&slug, target.as_deref(), list)
+        }
+        Some(Cmd::Run { task, slug, args }) => {
+            let task = selected_task(&app, task)?;
+            let slug = selected_slug(&app, slug)?;
+            app.cmd_run(&task, &slug, &args)
+        }
         Some(Cmd::Tasks) => app.cmd_tasks(),
         Some(Cmd::Path { slug }) => {
+            let slug = selected_slug(&app, slug)?;
             println!("{}", app.dir(&slug).display());
             Ok(())
         }
@@ -268,6 +302,20 @@ fn try_main() -> Result<()> {
             println!("{:<10}: {}", t!("label.root"), app.root.display());
             Ok(())
         }
+    }
+}
+
+fn selected_slug(app: &App, slug: Option<String>) -> Result<String> {
+    match slug {
+        Some(slug) => Ok(slug),
+        None => skim_ui::choose_worktree(app)?.with_context(|| t!("err.cancelled").to_string()),
+    }
+}
+
+fn selected_task(app: &App, task: Option<String>) -> Result<String> {
+    match task {
+        Some(task) => Ok(task),
+        None => skim_ui::choose_task(app)?.with_context(|| t!("err.cancelled").to_string()),
     }
 }
 

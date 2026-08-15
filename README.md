@@ -107,33 +107,53 @@ $EDITOR wt.toml
 wt new demo             # creates ../my-project-wt/demo on branch wt/demo
 wt new fix --from dev   # same, but the branch starts at dev
 wt shell demo           # a shell inside the worktree — claude, a build, a rebase…
-wt                      # interactive interface
+wt                      # fuzzy picker: worktree, then action
+wt tui                  # persistent Ratatui dashboard
 ```
 
 ## Commands
 
 | Command | Effect |
 |---|---|
-| `wt` | interactive interface (list, preview, actions) |
+| `wt` | Skim interface: fuzzy worktree selection, then an action |
+| `wt tui` | persistent Ratatui dashboard (list, preview, actions) |
 | `wt init [--preset plain\|web] [--force]` | writes an example `wt.toml` |
 | `wt new <slug> [branch] [--from ref] [--set k=v]` | checkout + directories + copies + `post_new` hooks |
-| `wt up <slug> [--set k=v]` | `up` hooks (and port allocation, if any) |
-| `wt down <slug>` | `down` hooks — the checkout and state are kept |
-| `wt ls` / `wt show <slug>` | worktree state |
-| `wt rm <slug> [-y]` | `pre_rm` hooks, worktree removal, `post_rm` hooks |
+| `wt up [slug] [--set k=v]` | `up` hooks (and port allocation, if any) |
+| `wt down [slug]` | `down` hooks — the checkout and state are kept |
+| `wt ls` / `wt show [slug]` | worktree state |
+| `wt rm [slug] [-y]` | `pre_rm` hooks, worktree removal, `post_rm` hooks |
 | `wt shell [slug]` | opens a shell at the worktree root |
 | `wt cd [slug]` | changes directory to the worktree (needs `wt shell-init`) |
 | `wt shell-init <bash\|zsh\|fish>` | the shell function `wt cd` needs |
-| `wt ide <slug> [editor]` | opens the worktree in an editor |
-| `wt open <slug> [target] [--list]` | opens an address in the browser (WSL included) |
-| `wt run <task> <slug> [args…]` | runs a `wt.toml` task |
-| `wt tasks` / `wt root` / `wt path <slug>` | introspection |
+| `wt ide [slug] [editor]` | opens the worktree in an editor |
+| `wt open [slug] [target] [--list]` | opens an address in the browser (WSL included) |
+| `wt run [task] [slug] [args…]` | runs a `wt.toml` task |
+| `wt tasks` / `wt root` / `wt path [slug]` | introspection |
 | `wt completions <shell>` | completion script (slugs, tasks and branches included) |
 
 `wt` works from the main repository **and from inside a worktree**: the configuration is
 always the main repository's, not that of the branch currently checked out.
 
-### Interface shortcuts
+When a subcommand omits a value wt can enumerate, Skim asks for it: `wt open`, for
+example, opens the worktree picker; `wt run` asks for the task and then the worktree.
+Explicit arguments keep the direct, script-friendly path.
+
+### Default interface: Skim
+
+`wt` opens a focused fuzzy picker: choose a worktree, then the action to run. Creating
+a worktree is always the first item, including when none exists yet. The following
+pickers — branch, task, editor, address, and `wt.toml` choices — use Skim too. `ENTER`
+selects, `ESC` cancels, and `TAB` marks items in a multiple-choice picker.
+
+The selected action then gets the terminal. This is especially natural for a shell, a
+terminal editor, or an interactive task. Skim is embedded in `wt`; no `fzf` or `sk`
+binary needs to be installed.
+
+### Ratatui dashboard: `wt tui`
+
+`wt tui` keeps the persistent interface with its list, preview, background actions,
+and output panel. Its shortcuts are:
 
 `↑↓`/`jk` move · `ENTER` action menu · `n` create · `s` start · `S` start with options ·
 `d` stop · `c` shell · `e` editor · `o` browser · `t` task · `r` remove · `g` refresh ·
@@ -149,8 +169,8 @@ The footer, the action menu and the help only show what the `wt.toml` declares: 
 
 ### Creating a worktree
 
-`n` — or "create a worktree" in the action menu — asks three questions in a row: **which
-branch** (an existing one, or `＋ new branch`); for a new one, **where it starts from** —
+In `wt tui`, `n` — or "create a worktree" in the action menu — asks three questions in
+a row: **which branch** (an existing one, or `＋ new branch`); for a new one, **where it starts from** —
 `dev`, `master`, a colleague's branch… — with the main repository's checked-out branch
 preselected and marked `●`; then the worktree's **slug**. The `wt.toml` questions, if
 any, come next.
@@ -192,7 +212,7 @@ wt shell-init fish > ~/.config/fish/functions/wt.fish
 The function only intercepts `wt cd`; every other command goes to the binary untouched.
 Without it, `wt cd demo` still prints the path and says which line is missing.
 
-In the interface it is `c`, or "shell in the worktree" in the action menu: a terminal
+In `wt tui` it is `c`, or "shell in the worktree" in the action menu: a terminal
 window opens on the worktree and the list stays where it is (see below when the machine
 has no emulator to open one with).
 
@@ -214,7 +234,7 @@ the hooks get: `$WT_SLUG`, `$WT_PATH`, `$WT_PORT_VITE`… Which shell it is come
 `WT_TERMINAL`, then `[editor] terminal`, then `$SHELL`. `wt cd`, being your own shell,
 exports nothing.
 
-From the interface, `c` opens that shell in a **terminal window of its own**: the list
+From `wt tui`, `c` opens that shell in a **terminal window of its own**: the list
 stays where it is, and the session outlives it. The emulator is `WT_TERMINAL_WINDOW`,
 then `[editor] terminal_window`, then whichever known one is installed — Windows Terminal
 under WSL, otherwise ghostty, WezTerm, kitty, Alacritty, foot, GNOME Terminal, Konsole,
@@ -250,7 +270,8 @@ all rather than an error: a TAB is not the place to learn something is wrong.
 
 ### Searching a picker
 
-Every picker — branches, tasks, editors, addresses, and the `wt.toml` questions —
+Every picker — in the default Skim mode as well as in `wt tui` — branches, tasks,
+editors, addresses, and the `wt.toml` questions —
 **filters as you type**, the way `fzf` does: type `acme` and three hundred tenants
 become three. The letters need not be adjacent (`fab` finds `feature/acme-billing`),
 case is ignored, and **a space narrows** rather than searching: `acme prod` keeps only
@@ -261,11 +282,11 @@ word before its middle — and the matched characters are highlighted. The count
 bottom right shows what is left.
 
 Since typing feeds the search, moving around is done with the arrows or with `^N`/`^P`
-(`^J`/`^K`), `TAB` ticks a box in a multiple choice, `^U` clears the search, and `ESC`
-clears it first, then closes the picker. On an empty search `⌫` goes back a step when the
-picker came after another question.
+(`^J`/`^K`), `TAB` ticks a box in a multiple choice, and `^U` clears the search. In Skim
+mode, `ESC` cancels. In `wt tui`, it clears the search first and then closes the picker;
+on an empty search `⌫` goes back a step when the picker came after another question.
 
-### Action output
+### Action output in `wt tui`
 
 Creations, starts, stops, removals and tasks run **without leaving the interface**: their
 output (stdout and stderr) scrolls in a panel as it comes, with `↑↓` / `PgUp` / `PgDn` to
@@ -281,7 +302,7 @@ A task that needs the terminal — a shell, a `logs -f`, a full-screen watcher �
 `interactive = true`: the interface then steps aside while it runs and takes over again
 afterwards. The editor does the same.
 
-### Offered follow-ups
+### Follow-ups offered by `wt tui`
 
 - **after a creation**, if the project has `[hooks] up`, the panel asks "start the
   services now?" — `o` chains (including the `wt.toml` questions), any other key closes;
@@ -435,8 +456,9 @@ wt open demo globex          # the one whose label or URL contains "globex"
 wt open demo --list          # show them all
 ```
 
-In the interface, `o` opens directly when there is a single address, and offers a picker
-as soon as there are several.
+In Skim mode, the "open in the browser" action opens directly when there is a single
+address and offers a picker as soon as there are several. In `wt tui`, its shortcut is
+`o`.
 
 ## What `wt` guarantees
 

@@ -109,33 +109,54 @@ $EDITOR wt.toml
 wt new demo             # crée ../mon-projet-wt/demo sur la branche wt/demo
 wt new fix --from dev   # même chose, mais la branche part de dev
 wt shell demo           # un shell dans le worktree — claude, un build, un rebase…
-wt                      # interface interactive
+wt                      # sélecteur fuzzy : worktree, puis action
+wt tui                  # tableau de bord Ratatui persistant
 ```
 
 ## Commandes
 
 | Commande | Effet |
 |---|---|
-| `wt` | interface interactive (liste, aperçu, actions) |
+| `wt` | interface Skim : choix fuzzy d'un worktree, puis d'une action |
+| `wt tui` | tableau de bord Ratatui persistant (liste, aperçu, actions) |
 | `wt init [--preset plain\|web] [--force]` | écrit un `wt.toml` d'exemple |
 | `wt new <slug> [branche] [--from ref] [--set k=v]` | checkout + dossiers + copies + hooks `post_new` |
-| `wt up <slug> [--set k=v]` | hooks `up` (et allocation des ports, s'il y en a) |
-| `wt down <slug>` | hooks `down` — le checkout et l'état sont conservés |
-| `wt ls` / `wt show <slug>` | état des worktrees |
-| `wt rm <slug> [-y]` | hooks `pre_rm`, retrait du worktree, hooks `post_rm` |
+| `wt up [slug] [--set k=v]` | hooks `up` (et allocation des ports, s'il y en a) |
+| `wt down [slug]` | hooks `down` — le checkout et l'état sont conservés |
+| `wt ls` / `wt show [slug]` | état des worktrees |
+| `wt rm [slug] [-y]` | hooks `pre_rm`, retrait du worktree, hooks `post_rm` |
 | `wt shell [slug]` | ouvre un shell à la racine du worktree |
 | `wt cd [slug]` | se déplace dans le worktree (nécessite `wt shell-init`) |
 | `wt shell-init <bash\|zsh\|fish>` | la fonction shell dont `wt cd` a besoin |
-| `wt ide <slug> [éditeur]` | ouvre le worktree dans un éditeur |
-| `wt open <slug> [cible] [--list]` | ouvre une adresse dans le navigateur (WSL compris) |
-| `wt run <tâche> <slug> [args…]` | lance une tâche du `wt.toml` |
-| `wt tasks` / `wt root` / `wt path <slug>` | introspection |
+| `wt ide [slug] [éditeur]` | ouvre le worktree dans un éditeur |
+| `wt open [slug] [cible] [--list]` | ouvre une adresse dans le navigateur (WSL compris) |
+| `wt run [tâche] [slug] [args…]` | lance une tâche du `wt.toml` |
+| `wt tasks` / `wt root` / `wt path [slug]` | introspection |
 | `wt completions <shell>` | script de complétion (slugs, tâches et branches compris) |
 
 `wt` fonctionne depuis le repo principal **comme depuis un worktree** : la configuration
 est toujours celle du repo principal, pas celle de la branche en cours de checkout.
 
-### Raccourcis de l'interface
+Quand une sous-commande omet une valeur que wt sait énumérer, Skim la demande :
+`wt open`, par exemple, ouvre le sélecteur de worktree ; `wt run` demande la tâche puis
+le worktree. Avec des arguments explicites, le chemin reste direct et adapté aux scripts.
+
+### Interface par défaut : Skim
+
+`wt` ouvre un sélecteur fuzzy léger : choisis un worktree, puis l'action à exécuter.
+La création est toujours proposée en tête de liste, y compris quand aucun worktree
+n'existe encore. Les sélecteurs suivants — branche, tâche, éditeur, adresse et choix
+du `wt.toml` — utilisent eux aussi Skim. `ENTRÉE` choisit, `ÉCHAP` annule et, pour un
+choix multiple, `TAB` coche.
+
+L'action choisie récupère ensuite le terminal. C'est notamment naturel pour un shell,
+un éditeur terminal ou une tâche interactive. Skim est embarqué dans `wt` : aucun
+binaire `fzf` ou `sk` n'est requis.
+
+### Tableau de bord Ratatui : `wt tui`
+
+`wt tui` conserve l'interface persistante avec liste, aperçu, actions en arrière-plan
+et panneau de sortie. Ses raccourcis sont :
 
 `↑↓`/`jk` naviguer · `ENTRÉE` menu d'actions · `n` créer · `s` démarrer ·
 `S` démarrer avec options · `d` arrêter · `c` shell · `e` éditeur · `o` navigateur ·
@@ -152,8 +173,8 @@ déclare : sans `[hooks] up`, pas de « démarrer » ; sans `[open] url`, pas de
 
 ### Créer un worktree
 
-`n` — ou « créer un worktree » dans le menu d'actions — enchaîne trois questions : **quelle
-branche** (une existante, ou `＋ nouvelle branche`) ; pour une nouvelle, **d'où elle
+Dans `wt tui`, `n` — ou « créer un worktree » dans le menu d'actions — enchaîne trois
+questions : **quelle branche** (une existante, ou `＋ nouvelle branche`) ; pour une nouvelle, **d'où elle
 part** — `dev`, `master`, la branche d'une collègue… — celle en checkout dans le dépôt
 principal étant présélectionnée et marquée `●` ; puis le **slug** du worktree. Les
 questions du `wt.toml` viennent ensuite, s'il y en a.
@@ -196,7 +217,7 @@ wt shell-init fish > ~/.config/fish/functions/wt.fish
 La fonction n'intercepte que `wt cd` ; toute autre commande part au binaire telle quelle.
 Sans elle, `wt cd demo` affiche quand même le chemin et rappelle la ligne qui manque.
 
-Dans l'interface c'est `c`, ou « shell dans le worktree » dans le menu d'actions : une
+Dans `wt tui` c'est `c`, ou « shell dans le worktree » dans le menu d'actions : une
 fenêtre de terminal s'ouvre sur le worktree et la liste reste où elle est (voir plus bas
 quand la machine n'a aucun émulateur pour en ouvrir une).
 
@@ -220,7 +241,7 @@ que les hooks : `$WT_SLUG`, `$WT_PATH`, `$WT_PORT_VITE`… Lequel c'est vient de
 `WT_TERMINAL`, puis `[editor] terminal`, puis `$SHELL`. `wt cd`, qui est ton propre shell,
 n'exporte rien.
 
-Depuis l'interface, `c` ouvre ce shell dans une **fenêtre de terminal à lui** : la liste
+Depuis `wt tui`, `c` ouvre ce shell dans une **fenêtre de terminal à lui** : la liste
 reste où elle est, et la session lui survit. L'émulateur vient de `WT_TERMINAL_WINDOW`,
 puis `[editor] terminal_window`, puis de celui qui est installé — Windows Terminal sous
 WSL, sinon ghostty, WezTerm, kitty, Alacritty, foot, GNOME Terminal, Konsole,
@@ -258,7 +279,8 @@ qu'une erreur : un TAB n'est pas l'endroit où apprendre que quelque chose ne va
 
 ### Recherche dans les sélecteurs
 
-Tout sélecteur — branches, tâches, éditeurs, adresses, et les questions du `wt.toml` —
+Tout sélecteur — dans le mode Skim par défaut comme dans `wt tui` —
+branches, tâches, éditeurs, adresses, et questions du `wt.toml` —
 **se filtre à la frappe**, à la manière de `fzf` : tape `acme` et les trois cents
 tenants deviennent trois. Les lettres n'ont pas à se suivre (`fab` trouve
 `feature/acme-billing`), la casse est ignorée, et **l'espace affine** au lieu de
@@ -270,11 +292,12 @@ un début de mot avant un milieu de mot — et les caractères trouvés sont sur
 compteur en bas à droite indique ce qui reste.
 
 Comme la frappe alimente la recherche, la navigation se fait aux flèches ou avec
-`^N`/`^P` (`^J`/`^K`), `TAB` coche dans un choix multiple, `^U` efface la recherche, et
-`ÉCHAP` l'efface d'abord, puis ferme le sélecteur. Sur une recherche vide, `⌫` revient
-d'un pas quand le sélecteur suit une autre question.
+`^N`/`^P` (`^J`/`^K`), `TAB` coche dans un choix multiple et `^U` efface la recherche.
+Dans le mode Skim, `ÉCHAP` annule. Dans `wt tui`, il efface d'abord la recherche, puis
+ferme le sélecteur ; sur une recherche vide, `⌫` revient d'un pas quand le sélecteur
+suit une autre question.
 
-### Sortie des actions
+### Sortie des actions dans `wt tui`
 
 Créations, démarrages, arrêts, suppressions et tâches s'exécutent **sans quitter
 l'interface** : leur sortie (stdout et stderr) défile au fil de l'eau dans un panneau,
@@ -290,7 +313,7 @@ Une tâche qui a besoin du terminal — un shell, un `logs -f`, un watcher plein
 déclare `interactive = true` : l'interface s'efface le temps de son exécution, puis
 reprend la main. C'est aussi le cas de l'éditeur.
 
-### Enchaînements proposés
+### Enchaînements proposés par `wt tui`
 
 - **après une création**, si le projet a des `[hooks] up`, le panneau demande « démarrer
   les services maintenant ? » — `o` enchaîne (questions du `wt.toml` comprises), toute
@@ -448,8 +471,9 @@ wt open demo globex          # celle dont le libellé ou l'URL contient « globe
 wt open demo --list          # les afficher toutes
 ```
 
-Dans l'interface, `o` ouvre directement s'il n'y a qu'une adresse, et propose un
-sélecteur dès qu'il y en a plusieurs.
+Dans le mode Skim, l'action « ouvrir dans le navigateur » ouvre directement s'il n'y a
+qu'une adresse et propose un sélecteur dès qu'il y en a plusieurs. Dans `wt tui`, son
+raccourci est `o`.
 
 ## Ce que `wt` garantit
 

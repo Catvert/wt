@@ -6,6 +6,28 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-08-15
+
+### Added
+
+- A focused, embedded Skim interface for the default `wt` invocation: fuzzy-select a
+  worktree, then an action, with previews and the same searchable branch, task, editor,
+  address and `[[prompt]]` choices. It requires no separate `fzf` or `sk` executable.
+- `wt tui` opens the persistent Ratatui dashboard that `wt` used to open directly.
+
+### Changed
+
+- Running `wt` without a subcommand now opens the one-shot Skim workflow. The selected
+  action gets the terminal after the picker closes; this suits shells, terminal editors
+  and interactive tasks without temporarily suspending a dashboard.
+- Subcommands now open a Skim picker for omitted enumerable arguments: worktrees for
+  commands such as `wt open`, and the task followed by the worktree for `wt run`.
+
+### Fixed
+
+- Selecting a worktree in the Skim workflow no longer offers worktree creation again in
+  its action menu.
+
 ## [0.5.0] — 2026-08-05
 
 ### Added
