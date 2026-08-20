@@ -5,21 +5,34 @@ edition = "2021"
 description = "Git worktree manager driven by a per-project wt.toml, independent of the project's language"
 license = "MIT"
 
+[lib]
+name = "wt"
+path = "src/lib.rs"
+
 [[bin]]
 name = "wt"
 path = "src/main.rs"
+required-features = ["cli"]
+
+# `cli` porte tout ce qui n'a de sens que dans un terminal — la ligne de commande,
+# l'interface skim, le tableau de bord ratatui — et les dépendances qui vont avec.
+# Un consommateur de la bibliothèque (Claudhub) la désactive : il crée des dossiers et
+# lit un wt.toml, il n'a pas à compiler clap, ratatui et skim pour cela.
+[features]
+default = ["cli"]
+cli = ["dep:clap", "dep:clap_complete", "dep:ratatui", "dep:skim"]
 
 [dependencies]
 anyhow = "1"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive"], optional = true }
 # Dynamic completions: the candidates for a slug or a task can only come from the
 # project at hand, which a script generated at install time cannot know. The feature
 # is upstream-unstable, hence the pinned minor — a bump is a decision, not a side
 # effect of `cargo update`.
-clap_complete = { version = "4.6", features = ["unstable-dynamic"] }
+clap_complete = { version = "4.6", features = ["unstable-dynamic"], optional = true }
 # Features trimmed to what the interface uses: by default ratatui also builds the
 # calendar widget and its `time` dependency, which we have no use for.
-ratatui = { version = "0.30", default-features = false, features = [
+ratatui = { version = "0.30", default-features = false, optional = true, features = [
     "std",
     "crossterm",
     "layout-cache",
@@ -31,7 +44,7 @@ serde = { version = "1", features = ["derive"] }
 # shelling out to `fzf`/`sk`, so installing wt still produces one self-contained binary.
 # CLI, image preview and IPC support are deliberately left out: the library picker is
 # all wt needs, and those features pull in a sizeable set of unrelated dependencies.
-skim = { version = "5.6", default-features = false }
+skim = { version = "5.6", default-features = false, optional = true }
 toml = "1"
 
 [profile.release]

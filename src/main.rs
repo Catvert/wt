@@ -4,24 +4,19 @@
 //! allocates ports, copies what it is told to, and runs the commands declared in the
 //! project's `wt.toml`. A Laravel app, a Rust CLI and a static site use the same binary
 //! with three different configurations.
+//!
+//! Le binaire n'est qu'une façade : tout ce qu'il appelle vit dans la bibliothèque du
+//! même nom (`src/lib.rs`), que Claudhub consomme sans la caractéristique `cli`.
 
 #[macro_use]
 extern crate rust_i18n;
 
-mod ansi;
-mod complete;
-mod config;
-mod fuzzy;
-mod git;
-mod i18n;
-mod ops;
-mod skim_ui;
-mod state;
-mod tmpl;
-mod ui;
-mod util;
-
+// Les catalogues sont compilés par crate : `t!` se résout en `crate::_rust_i18n_translate`,
+// et le binaire a le sien. La locale, elle, est un état global de `rust_i18n` — c'est le
+// `i18n::init()` de la bibliothèque qui la choisit, pour les deux.
 rust_i18n::i18n!("locales", fallback = "en");
+
+use wt::{complete, config, git, i18n, ops, skim_ui, ui};
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -192,7 +187,7 @@ fn try_main() -> Result<()> {
     i18n::init();
     // `COMPLETE=<shell> wt …`: answer the shell and exit. Before anything can write to
     // stdout, which is where the candidates go.
-    complete::serve();
+    complete::serve(<Cli as clap::CommandFactory>::command);
     let cli = Cli::parse();
     let start = match cli.dir {
         Some(d) => d,

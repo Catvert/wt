@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `wt` is now a library as well as a binary. `config`, `git`, `ops`, `state`, `tmpl`,
+  `util` and `fuzzy` are public modules; a graphical front-end can create worktrees, run
+  tasks and read a `wt.toml` without parsing the output of a CLI written for a human.
+- A `cli` feature, on by default, carries the command line, the Skim workflow and the
+  Ratatui dashboard along with their dependencies. `default-features = false` builds the
+  library alone, without clap, ratatui or skim.
+
 ## [0.6.0] — 2026-08-15
 
 ### Added

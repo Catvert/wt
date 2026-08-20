@@ -10,7 +10,6 @@
 //! A completion is nobody's way of learning something is wrong.
 
 use anyhow::{Context, Result};
-use clap::CommandFactory;
 use clap_complete::env::Shells;
 use clap_complete::{ArgValueCandidates, CompletionCandidate};
 
@@ -24,8 +23,11 @@ const VAR: &str = "COMPLETE";
 ///
 /// Must come before anything writes to stdout: what we print there *is* the candidate
 /// list the shell reads.
-pub fn serve() {
-    clap_complete::CompleteEnv::with_factory(crate::Cli::command)
+///
+/// La fabrique de commande vient du binaire : `Cli` est sa grammaire, et la
+/// bibliothèque n'a pas à la connaître pour savoir énumérer des slugs.
+pub fn serve(factory: fn() -> clap::Command) {
+    clap_complete::CompleteEnv::with_factory(factory)
         // Call `wt` from the PATH rather than argv[0]: a script written by
         // `wt completions` outlives the path the binary happened to be run from.
         .completer("wt")
