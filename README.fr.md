@@ -370,11 +370,40 @@ command = "phpstorm"                 # WT_IDE de l'environnement reste prioritai
 terminal = "zsh"                     # shell proposé après l'ouverture de l'éditeur
 terminal_window = "kitty"            # émulateur qui l'ouvre dans une fenêtre à lui
 
+[lsp.php]
+command = "phpantom_lsp"             # un serveur de langage pour le code du projet
+extensions = ["php", "blade.php"]    # les fichiers qu'il sert
+
 [tasks.shell]
 description = "shell dans le conteneur"
 interactive = true
 run = "docker compose -p {{repo}}-{{slug}} exec app bash"
 ```
+
+### Serveurs de langage (`[lsp]`)
+
+Un projet peut nommer les serveurs de langage que son code réclame. `wt` n'en fait
+rien : il n'en lance ni n'en surveille aucun, et la ligne de commande n'en a pas
+l'usage. S'ils se déclarent ici, c'est que c'est le fichier où un projet dit déjà ce
+qu'il lui faut — une interface graphique qui embarque la bibliothèque les lit à côté des
+tâches et des ports, et aucun projet n'a un second fichier à apprendre.
+
+```toml
+[lsp.php]
+command = "phpantom_lsp"             # templaté : {{main}}/vendor/bin/… marche
+args = []
+extensions = ["php", "blade.php"]    # sans le point
+env = { PHPANTOM_LOG = "info" }
+language = "php"                     # le languageId LSP ; par défaut, la clé de la table
+```
+
+Les réglages propres au serveur n'ont rien à faire ici : un serveur de langage a presque
+toujours son fichier de configuration à lui, dans le projet, qu'il lit et surveille
+lui-même.
+
+À quelle entrée appartient un fichier donné regarde l'interface et non nous :
+`page.blade.php` en désigne deux à la fois, et la règle qui les départage — la plus
+longue extension l'emporte — appartient là où les fichiers s'ouvrent.
 
 ### Exemples
 

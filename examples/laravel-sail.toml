@@ -133,3 +133,9 @@ run = [
 [tasks.test]
 description = "the worktree test suite"
 run = "{{compose}} exec -T -u sail app-wt php artisan test {{args}}"
+
+# Read by a graphical front-end, ignored by the command line. PHPantom serves Blade
+# views as well, through its own virtual-PHP preprocessing.
+[lsp.php]
+command = "phpantom_lsp"
+extensions = ["php", "blade.php"]

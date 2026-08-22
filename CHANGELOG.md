@@ -14,6 +14,10 @@ All notable changes to this project are documented here. The format follows
 - A `cli` feature, on by default, carries the command line, the Skim workflow and the
   Ratatui dashboard along with their dependencies. `default-features = false` builds the
   library alone, without clap, ratatui or skim.
+- An `[lsp.<name>]` section: the language servers a project's code wants, with their
+  command, arguments, environment and the extensions they serve. `wt` neither starts nor
+  supervises them — they are read by a front-end embedding the library, which is why a
+  project declares them in the file it already uses rather than in a second one.
 
 ## [0.6.0] — 2026-08-15
 

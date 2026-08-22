@@ -52,6 +52,20 @@ pub struct Config {
     #[serde(default)]
     pub tasks: BTreeMap<String, Task>,
 
+    /// Language servers a front-end may start for this project's code.
+    ///
+    /// `wt` does nothing with them: it neither launches nor supervises a
+    /// language server, and the command line has no use for one. They are here
+    /// because this is the file a project already uses to say what it needs —
+    /// a graphical front-end embedding the library reads them alongside the
+    /// tasks and the ports, and no project has to learn a second file.
+    ///
+    /// Server-specific settings do **not** belong here: a language server
+    /// almost always has a configuration file of its own, in the project, that
+    /// it reads and watches itself.
+    #[serde(default)]
+    pub lsp: BTreeMap<String, LanguageServer>,
+
     #[serde(default)]
     pub status: Status,
 
@@ -255,6 +269,42 @@ pub enum Cwd {
     Main,
 }
 
+/// A language server declared by the project.
+///
+/// The table's key names it (`[lsp.php]`), and doubles as the LSP `languageId`
+/// announced for the files it serves — `language` overrides that when the two
+/// differ.
+///
+/// Which of several servers a given file belongs to is the front-end's call,
+/// not ours: `extensions` is the raw material, and a file such as
+/// `page.blade.php` matches two entries at once. The rule that settles it — the
+/// longest extension wins — belongs where the files are opened.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct LanguageServer {
+    /// The program to run. Templated like everything else, so a server living
+    /// in the project (`{{main}}/vendor/bin/…`) can be named.
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Environment added to the server's own, values templated as well.
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+    /// Extensions served, without the leading dot: `"php"`, `"blade.php"`.
+    /// Empty means the front-end decides, usually by the server's own name.
+    #[serde(default)]
+    pub extensions: Vec<String>,
+    /// The `languageId` announced to the server. Defaults to the table's key.
+    pub language: Option<String>,
+}
+
+impl LanguageServer {
+    /// The `languageId` for this server, `name` being its key in the table.
+    pub fn language_id<'a>(&'a self, name: &'a str) -> &'a str {
+        self.language.as_deref().unwrap_or(name)
+    }
+}
+
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Status {
@@ -425,6 +475,47 @@ mod tests {
         for (nom, contenu) in fichiers {
             toml::from_str::<Config>(contenu).unwrap_or_else(|e| panic!("{nom} : {e}"));
         }
+    }
+
+    /// A declared language server is data, and the defaults are what a project
+    /// leaves out: no arguments, no environment, and a `languageId` that is the
+    /// table's key.
+    #[test]
+    fn a_language_server_defaults_to_its_key() {
+        let c: Config = toml::from_str(
+            r#"
+[lsp.php]
+command = "phpantom_lsp"
+extensions = ["php", "blade.php"]
+
+[lsp.rust]
+command = "rust-analyzer"
+language = "rust"
+env = { RA_LOG = "info" }
+args = ["--log-file", "/tmp/ra.log"]
+"#,
+        )
+        .unwrap();
+
+        let php = &c.lsp["php"];
+        assert_eq!(php.command, "phpantom_lsp");
+        assert_eq!(php.language_id("php"), "php");
+        assert!(php.args.is_empty());
+        assert!(php.env.is_empty());
+        assert_eq!(php.extensions, ["php", "blade.php"]);
+
+        let rust = &c.lsp["rust"];
+        assert_eq!(rust.language_id("rust"), "rust");
+        assert_eq!(rust.env["RA_LOG"], "info");
+        assert_eq!(rust.args.len(), 2);
+    }
+
+    /// A project that declares none is the normal case, and the field must not
+    /// force one on it.
+    #[test]
+    fn no_language_server_is_the_default() {
+        let c: Config = toml::from_str("").unwrap();
+        assert!(c.lsp.is_empty());
     }
 
     /// A project may have no configuration at all: no ports, no services, no URL.

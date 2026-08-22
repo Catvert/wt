@@ -37,3 +37,9 @@ run = [
     "cargo build --release",
     "hyperfine '{{path}}/target/release/{{repo}} --help' '{{main}}/target/release/{{repo}} --help'",
 ]
+
+# A front-end that embeds the library can start this for the worktree's code. `wt`
+# itself neither launches nor supervises it.
+[lsp.rust]
+command = "rust-analyzer"
+extensions = ["rs"]
