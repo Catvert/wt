@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-08-22
+
 ### Added
 
 - `wt` is now a library as well as a binary. `config`, `git`, `ops`, `state`, `tmpl`,
