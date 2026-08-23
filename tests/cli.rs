@@ -55,8 +55,8 @@ fn help_exposes_tui_and_default_mode_rejects_a_pipe() {
     let help = stdout(&help);
     assert!(help.contains("tui"), "{help}");
 
-    // `Command::output` gives the child pipes, not a TTY. The default Skim interface
-    // must fail clearly instead of entering raw mode or waiting for input forever.
+    // `Command::output` gives the child pipes, not a TTY. The default dashboard must
+    // fail clearly instead of entering raw mode or waiting for input forever.
     let out = wt(project.path()).output().unwrap();
     assert!(!out.status.success());
     assert!(

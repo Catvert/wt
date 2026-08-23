@@ -34,7 +34,7 @@ use ops::App;
     name = "wt",
     version,
     about = "Git worktree manager, configured by a per-project wt.toml",
-    after_help = "Without a subcommand: opens the Skim fuzzy interface. Use `wt tui` for the persistent Ratatui dashboard."
+    after_help = "Without a subcommand: opens the persistent Ratatui dashboard. Use `wt pick` for the one-shot Skim fuzzy interface."
 )]
 struct Cli {
     /// Starting directory used to find the project (default: current directory).
@@ -90,8 +90,10 @@ enum Cmd {
     },
     /// Lists the worktrees and their state.
     Ls,
-    /// Opens the persistent Ratatui dashboard.
+    /// Opens the persistent Ratatui dashboard — what `wt` alone does.
     Tui,
+    /// Opens the one-shot Skim interface: a worktree, then an action.
+    Pick,
     /// Details of one worktree.
     Show {
         #[arg(add = complete::slugs())]
@@ -218,7 +220,7 @@ fn try_main() -> Result<()> {
     let app = Arc::new(App::new(Project::load(&start)?)?);
 
     match cli.cmd {
-        None => skim_ui::run(&app),
+        None => ui::run(Arc::clone(&app)),
         Some(Cmd::Init { .. }) | Some(Cmd::Completions { .. }) | Some(Cmd::ShellInit { .. }) => {
             unreachable!()
         }
@@ -238,6 +240,7 @@ fn try_main() -> Result<()> {
         }
         Some(Cmd::Ls) => app.cmd_ls(),
         Some(Cmd::Tui) => ui::run(Arc::clone(&app)),
+        Some(Cmd::Pick) => skim_ui::run(&app),
         Some(Cmd::Show { slug }) => {
             let slug = selected_slug(&app, slug)?;
             let wt = app

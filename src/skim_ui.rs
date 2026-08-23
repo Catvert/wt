@@ -1,8 +1,8 @@
-//! The default, fzf-style interface powered by the embedded `skim` library.
+//! The fzf-style interface powered by the embedded `skim` library, opened by `wt pick`.
 //!
 //! This interface is intentionally one-shot: choose a worktree, choose an action, then
-//! let that action own the terminal.  The persistent dashboard remains available as
-//! `wt tui`.
+//! let that action own the terminal.  The default `wt` invocation opens the persistent
+//! dashboard instead.
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;

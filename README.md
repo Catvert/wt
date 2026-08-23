@@ -107,16 +107,17 @@ $EDITOR wt.toml
 wt new demo             # creates ../my-project-wt/demo on branch wt/demo
 wt new fix --from dev   # same, but the branch starts at dev
 wt shell demo           # a shell inside the worktree — claude, a build, a rebase…
-wt                      # fuzzy picker: worktree, then action
-wt tui                  # persistent Ratatui dashboard
+wt                      # persistent Ratatui dashboard
+wt pick                 # fuzzy picker: worktree, then action
 ```
 
 ## Commands
 
 | Command | Effect |
 |---|---|
-| `wt` | Skim interface: fuzzy worktree selection, then an action |
-| `wt tui` | persistent Ratatui dashboard (list, preview, actions) |
+| `wt` | persistent Ratatui dashboard (list, preview, actions) |
+| `wt tui` | same dashboard, spelled out |
+| `wt pick` | Skim interface: fuzzy worktree selection, then an action |
 | `wt init [--preset plain\|web] [--force]` | writes an example `wt.toml` |
 | `wt new <slug> [branch] [--from ref] [--set k=v]` | checkout + directories + copies + `post_new` hooks |
 | `wt up [slug] [--set k=v]` | `up` hooks (and port allocation, if any) |
@@ -139,20 +140,9 @@ When a subcommand omits a value wt can enumerate, Skim asks for it: `wt open`, f
 example, opens the worktree picker; `wt run` asks for the task and then the worktree.
 Explicit arguments keep the direct, script-friendly path.
 
-### Default interface: Skim
+### Default interface: the Ratatui dashboard
 
-`wt` opens a focused fuzzy picker: choose a worktree, then the action to run. Creating
-a worktree is always the first item, including when none exists yet. The following
-pickers — branch, task, editor, address, and `wt.toml` choices — use Skim too. `ENTER`
-selects, `ESC` cancels, and `TAB` marks items in a multiple-choice picker.
-
-The selected action then gets the terminal. This is especially natural for a shell, a
-terminal editor, or an interactive task. Skim is embedded in `wt`; no `fzf` or `sk`
-binary needs to be installed.
-
-### Ratatui dashboard: `wt tui`
-
-`wt tui` keeps the persistent interface with its list, preview, background actions,
+`wt`, with no subcommand — or `wt tui` — opens the persistent interface with its list, preview, background actions,
 and output panel. Its shortcuts are:
 
 `↑↓`/`jk` move · `ENTER` action menu · `n` create · `s` start · `S` start with options ·
@@ -166,6 +156,17 @@ long enough to copy a line.
 
 The footer, the action menu and the help only show what the `wt.toml` declares: without
 `[hooks] up`, no "start"; without `[open] url`, no "browser".
+
+### Skim interface: `wt pick`
+
+`wt pick` opens a focused fuzzy picker: choose a worktree, then the action to run. Creating
+a worktree is always the first item, including when none exists yet. The following
+pickers — branch, task, editor, address, and `wt.toml` choices — use Skim too. `ENTER`
+selects, `ESC` cancels, and `TAB` marks items in a multiple-choice picker.
+
+The selected action then gets the terminal. This is especially natural for a shell, a
+terminal editor, or an interactive task. Skim is embedded in `wt`; no `fzf` or `sk`
+binary needs to be installed.
 
 ### Creating a worktree
 
@@ -270,7 +271,7 @@ all rather than an error: a TAB is not the place to learn something is wrong.
 
 ### Searching a picker
 
-Every picker — in the default Skim mode as well as in `wt tui` — branches, tasks,
+Every picker — in `wt pick` as well as in the dashboard — branches, tasks,
 editors, addresses, and the `wt.toml` questions —
 **filters as you type**, the way `fzf` does: type `acme` and three hundred tenants
 become three. The letters need not be adjacent (`fab` finds `feature/acme-billing`),
@@ -282,8 +283,7 @@ word before its middle — and the matched characters are highlighted. The count
 bottom right shows what is left.
 
 Since typing feeds the search, moving around is done with the arrows or with `^N`/`^P`
-(`^J`/`^K`), `TAB` ticks a box in a multiple choice, and `^U` clears the search. In Skim
-mode, `ESC` cancels. In `wt tui`, it clears the search first and then closes the picker;
+(`^J`/`^K`), `TAB` ticks a box in a multiple choice, and `^U` clears the search. In `wt pick`, `ESC` cancels. In the dashboard, it clears the search first and then closes the picker;
 on an empty search `⌫` goes back a step when the picker came after another question.
 
 ### Action output in `wt tui`
@@ -484,7 +484,7 @@ wt open demo globex          # the one whose label or URL contains "globex"
 wt open demo --list          # show them all
 ```
 
-In Skim mode, the "open in the browser" action opens directly when there is a single
+In `wt pick`, the "open in the browser" action opens directly when there is a single
 address and offers a picker as soon as there are several. In `wt tui`, its shortcut is
 `o`.
 

@@ -4,12 +4,12 @@
 //! subcommand.
 
 use std::collections::{BTreeMap, VecDeque};
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 // Crossterm comes from ratatui's re-export: depending on the crate directly risks a
 // version mismatch where event types would no longer be the same types.
 use ratatui::crossterm::event::{
@@ -375,6 +375,12 @@ struct Zones {
 }
 
 pub fn run(app: Arc<App>) -> Result<()> {
+    // The dashboard owns the keyboard and the alternate screen. Failing before entering
+    // raw mode gives scripts a useful error instead of a half-drawn interface.
+    if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+        bail!("{}", t!("err.interactive_tty"));
+    }
+
     let mut terminal = ratatui::init();
     let mut ui = Ui {
         app,

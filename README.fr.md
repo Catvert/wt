@@ -109,16 +109,17 @@ $EDITOR wt.toml
 wt new demo             # crée ../mon-projet-wt/demo sur la branche wt/demo
 wt new fix --from dev   # même chose, mais la branche part de dev
 wt shell demo           # un shell dans le worktree — claude, un build, un rebase…
-wt                      # sélecteur fuzzy : worktree, puis action
-wt tui                  # tableau de bord Ratatui persistant
+wt                      # tableau de bord Ratatui persistant
+wt pick                 # sélecteur fuzzy : worktree, puis action
 ```
 
 ## Commandes
 
 | Commande | Effet |
 |---|---|
-| `wt` | interface Skim : choix fuzzy d'un worktree, puis d'une action |
-| `wt tui` | tableau de bord Ratatui persistant (liste, aperçu, actions) |
+| `wt` | tableau de bord Ratatui persistant (liste, aperçu, actions) |
+| `wt tui` | le même tableau de bord, nommé explicitement |
+| `wt pick` | interface Skim : choix fuzzy d'un worktree, puis d'une action |
 | `wt init [--preset plain\|web] [--force]` | écrit un `wt.toml` d'exemple |
 | `wt new <slug> [branche] [--from ref] [--set k=v]` | checkout + dossiers + copies + hooks `post_new` |
 | `wt up [slug] [--set k=v]` | hooks `up` (et allocation des ports, s'il y en a) |
@@ -141,21 +142,9 @@ Quand une sous-commande omet une valeur que wt sait énumérer, Skim la demande 
 `wt open`, par exemple, ouvre le sélecteur de worktree ; `wt run` demande la tâche puis
 le worktree. Avec des arguments explicites, le chemin reste direct et adapté aux scripts.
 
-### Interface par défaut : Skim
+### Interface par défaut : le tableau de bord Ratatui
 
-`wt` ouvre un sélecteur fuzzy léger : choisis un worktree, puis l'action à exécuter.
-La création est toujours proposée en tête de liste, y compris quand aucun worktree
-n'existe encore. Les sélecteurs suivants — branche, tâche, éditeur, adresse et choix
-du `wt.toml` — utilisent eux aussi Skim. `ENTRÉE` choisit, `ÉCHAP` annule et, pour un
-choix multiple, `TAB` coche.
-
-L'action choisie récupère ensuite le terminal. C'est notamment naturel pour un shell,
-un éditeur terminal ou une tâche interactive. Skim est embarqué dans `wt` : aucun
-binaire `fzf` ou `sk` n'est requis.
-
-### Tableau de bord Ratatui : `wt tui`
-
-`wt tui` conserve l'interface persistante avec liste, aperçu, actions en arrière-plan
+`wt` sans sous-commande — ou `wt tui` — ouvre l'interface persistante avec liste, aperçu, actions en arrière-plan
 et panneau de sortie. Ses raccourcis sont :
 
 `↑↓`/`jk` naviguer · `ENTRÉE` menu d'actions · `n` créer · `s` démarrer ·
@@ -170,6 +159,18 @@ retrouve sa sélection de texte native, le temps de copier une ligne.
 Le pied de page, le menu d'actions et l'aide n'affichent que ce que le `wt.toml`
 déclare : sans `[hooks] up`, pas de « démarrer » ; sans `[open] url`, pas de
 « navigateur ».
+
+### Interface Skim : `wt pick`
+
+`wt pick` ouvre un sélecteur fuzzy léger : choisis un worktree, puis l'action à exécuter.
+La création est toujours proposée en tête de liste, y compris quand aucun worktree
+n'existe encore. Les sélecteurs suivants — branche, tâche, éditeur, adresse et choix
+du `wt.toml` — utilisent eux aussi Skim. `ENTRÉE` choisit, `ÉCHAP` annule et, pour un
+choix multiple, `TAB` coche.
+
+L'action choisie récupère ensuite le terminal. C'est notamment naturel pour un shell,
+un éditeur terminal ou une tâche interactive. Skim est embarqué dans `wt` : aucun
+binaire `fzf` ou `sk` n'est requis.
 
 ### Créer un worktree
 
@@ -279,7 +280,7 @@ qu'une erreur : un TAB n'est pas l'endroit où apprendre que quelque chose ne va
 
 ### Recherche dans les sélecteurs
 
-Tout sélecteur — dans le mode Skim par défaut comme dans `wt tui` —
+Tout sélecteur — dans `wt pick` comme dans le tableau de bord —
 branches, tâches, éditeurs, adresses, et questions du `wt.toml` —
 **se filtre à la frappe**, à la manière de `fzf` : tape `acme` et les trois cents
 tenants deviennent trois. Les lettres n'ont pas à se suivre (`fab` trouve
@@ -293,7 +294,7 @@ compteur en bas à droite indique ce qui reste.
 
 Comme la frappe alimente la recherche, la navigation se fait aux flèches ou avec
 `^N`/`^P` (`^J`/`^K`), `TAB` coche dans un choix multiple et `^U` efface la recherche.
-Dans le mode Skim, `ÉCHAP` annule. Dans `wt tui`, il efface d'abord la recherche, puis
+Dans `wt pick`, `ÉCHAP` annule. Dans le tableau de bord, il efface d'abord la recherche, puis
 ferme le sélecteur ; sur une recherche vide, `⌫` revient d'un pas quand le sélecteur
 suit une autre question.
 
@@ -500,7 +501,7 @@ wt open demo globex          # celle dont le libellé ou l'URL contient « globe
 wt open demo --list          # les afficher toutes
 ```
 
-Dans le mode Skim, l'action « ouvrir dans le navigateur » ouvre directement s'il n'y a
+Dans `wt pick`, l'action « ouvrir dans le navigateur » ouvre directement s'il n'y a
 qu'une adresse et propose un sélecteur dès qu'il y en a plusieurs. Dans `wt tui`, son
 raccourci est `o`.
 

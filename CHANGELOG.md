@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `wt pick` opens the one-shot Skim workflow.
+
+### Changed
+
+- Running `wt` without a subcommand opens the Ratatui dashboard again, as it did before
+  0.6.0. The Skim workflow moves to `wt pick`; `wt tui` still names the dashboard.
+
 ## [0.7.0] — 2026-08-22
 
 ### Added
