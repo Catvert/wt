@@ -250,9 +250,85 @@ fn ensure_upstream(main: &Path, branch: &str) {
     );
 }
 
+/// One entry of `git worktree list --porcelain`.
+#[derive(Debug, Clone)]
+pub struct GitWorktree {
+    pub path: PathBuf,
+    /// Short branch name; `None` for a detached HEAD or a bare repository.
+    pub branch: Option<String>,
+    pub locked: bool,
+    /// Git says the directory is gone (or no longer points back at the repository).
+    pub prunable: bool,
+}
+
+/// Every worktree git knows of, the main repository included. Unlike the lookups above,
+/// a failure is an error: `wt gc` decides what to clean from this list.
+pub fn worktrees(main: &Path) -> Result<Vec<GitWorktree>> {
+    let out = git(main, &["worktree", "list", "--porcelain"])?;
+    Ok(parse_worktrees(&out))
+}
+
+fn parse_worktrees(out: &str) -> Vec<GitWorktree> {
+    let mut list = Vec::new();
+    let mut current: Option<GitWorktree> = None;
+    for line in out.lines() {
+        if let Some(p) = line.strip_prefix("worktree ") {
+            list.extend(current.take());
+            current = Some(GitWorktree {
+                path: PathBuf::from(p),
+                branch: None,
+                locked: false,
+                prunable: false,
+            });
+            continue;
+        }
+        let Some(wt) = current.as_mut() else {
+            continue;
+        };
+        if let Some(b) = line.strip_prefix("branch ") {
+            wt.branch = Some(b.strip_prefix("refs/heads/").unwrap_or(b).to_string());
+        } else if line == "locked" || line.starts_with("locked ") {
+            wt.locked = true;
+        } else if line == "prunable" || line.starts_with("prunable ") {
+            wt.prunable = true;
+        }
+    }
+    list.extend(current);
+    list
+}
+
+/// Drops git's record of a worktree whose directory is gone. Without `--force`: should
+/// the directory have come back with changes, git refuses instead of deleting them.
+pub fn worktree_forget(main: &Path, path: &Path) -> Result<()> {
+    let path_s = path.to_string_lossy().into_owned();
+    git(main, &["worktree", "remove", &path_s])?;
+    Ok(())
+}
+
 pub fn worktree_remove(main: &Path, path: &Path) -> Result<()> {
     let path_s = path.to_string_lossy().into_owned();
     git(main, &["worktree", "remove", "--force", &path_s])?;
     git(main, &["worktree", "prune"])?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn porcelain_flags_and_branches() {
+        let out = "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n\
+                   worktree /repo-wt/a\nHEAD abc\nbranch refs/heads/wt/a\nprunable gitdir file points to non-existent location\n\n\
+                   worktree /repo-wt/b\nHEAD abc\ndetached\nlocked on a usb disk\n";
+        let list = parse_worktrees(out);
+        assert_eq!(list.len(), 3);
+        assert_eq!(list[0].branch.as_deref(), Some("main"));
+        assert!(!list[0].prunable && !list[0].locked);
+        assert_eq!(list[1].path, PathBuf::from("/repo-wt/a"));
+        assert_eq!(list[1].branch.as_deref(), Some("wt/a"));
+        assert!(list[1].prunable);
+        assert_eq!(list[2].branch, None);
+        assert!(list[2].locked && !list[2].prunable);
+    }
 }

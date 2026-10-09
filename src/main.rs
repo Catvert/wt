@@ -106,6 +106,20 @@ enum Cmd {
         #[arg(long, short)]
         yes: bool,
     },
+    /// Cleans up after worktrees removed without `wt rm` (dry run unless --apply).
+    ///
+    /// For each worktree wt has a state for but whose directory is gone: pre_rm hooks
+    /// (in an empty temporary directory), git metadata, post_rm hooks, then the state.
+    /// Ambiguous cases are reported and left alone. See docs/gc.md.
+    Gc {
+        /// Do it. Without this flag, only print what would be done.
+        #[arg(long)]
+        apply: bool,
+        /// Forget this entry's state without running any hook (repeatable). Only the
+        /// named entries are then handled.
+        #[arg(long, value_name = "SLUG")]
+        forget: Vec<String>,
+    },
     /// Opens a shell at the worktree root (to run claude, a build, a rebase…).
     ///
     /// Without a slug: the only worktree, or a menu. `exit` comes back here.
@@ -257,6 +271,7 @@ fn try_main() -> Result<()> {
             let slug = selected_slug(&app, slug)?;
             app.cmd_rm(&slug, yes)
         }
+        Some(Cmd::Gc { apply, forget }) => app.cmd_gc(apply, &forget),
         Some(Cmd::Shell { slug }) => {
             let slug = match slug {
                 Some(pattern) => app.choose_slug(Some(&pattern))?,

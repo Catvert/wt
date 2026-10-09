@@ -17,6 +17,7 @@ rust_i18n::i18n!("locales", fallback = "en");
 
 pub mod config;
 pub mod fuzzy;
+pub mod gc;
 pub mod git;
 pub mod i18n;
 pub mod ops;

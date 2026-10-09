@@ -16,8 +16,17 @@ use crate::tmpl::Vars;
 
 pub const STATE_DIR: &str = ".wt";
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+/// Written by `wt new` since `wt gc` exists. A state carrying it recorded its options from
+/// the start, so an empty option set really means "no option". States written before
+/// (no `format` key, read as 0) are trusted only when they hold options: see `wt gc`.
+pub const STATE_FORMAT: u32 = 1;
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct WtState {
+    /// 0 = written by `wt` ≤ 0.8.0. Kept as found by every command but `new`: a later
+    /// `up` must not vouch for options it never saw being recorded.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub format: u32,
     #[serde(default)]
     pub branch: String,
     /// Ports frozen on first start, so they stay stable across `up`s.
@@ -50,6 +59,48 @@ pub fn save(root: &Path, slug: &str, state: &WtState) -> Result<()> {
 
 pub fn forget(root: &Path, slug: &str) {
     let _ = fs::remove_file(state_path(root, slug));
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
+}
+
+/// Like `load`, but a missing or unparsable file is an error instead of an empty state:
+/// `wt gc` runs removal hooks from it and must never do so on a made-up configuration.
+pub fn load_strict(root: &Path, slug: &str) -> Result<WtState> {
+    let path = state_path(root, slug);
+    let body = fs::read_to_string(&path)
+        .with_context(|| t!("err.read_failed", path = path.display()).to_string())?;
+    toml::from_str(&body)
+        .with_context(|| t!("err.state_invalid", path = path.display()).to_string())
+}
+
+/// Removes a state file, failing loudly (unlike `forget`, which follows a removal that
+/// already succeeded).
+pub fn remove(root: &Path, slug: &str) -> Result<()> {
+    let path = state_path(root, slug);
+    fs::remove_file(&path)
+        .with_context(|| t!("err.write_failed", path = path.display()).to_string())
+}
+
+/// Slugs that have a state file, whether or not their worktree still exists. Files that
+/// `wt` cannot have written (not `<slug>.toml` with a valid slug) are left out.
+pub fn recorded(root: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(root.join(STATE_DIR)) else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.path().is_file())
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let slug = name.strip_suffix(".toml")?.to_string();
+            crate::ops::validate_slug(&slug).ok()?;
+            Some(slug)
+        })
+        .collect();
+    out.sort();
+    out
 }
 
 pub struct Worktree {

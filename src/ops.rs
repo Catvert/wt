@@ -76,16 +76,16 @@ impl App {
         let _ = tx.send(msg);
     }
 
-    fn info(&self, msg: impl Into<String>) {
+    pub(crate) fn info(&self, msg: impl Into<String>) {
         self.emit(Msg::Info(msg.into()));
     }
-    fn ok(&self, msg: impl Into<String>) {
+    pub(crate) fn ok(&self, msg: impl Into<String>) {
         self.emit(Msg::Ok(msg.into()));
     }
-    fn warn(&self, msg: impl Into<String>) {
+    pub(crate) fn warn(&self, msg: impl Into<String>) {
         self.emit(Msg::Warn(msg.into()));
     }
-    fn out(&self, msg: impl Into<String>) {
+    pub(crate) fn out(&self, msg: impl Into<String>) {
         self.emit(Msg::Out(msg.into()));
     }
 
@@ -306,7 +306,6 @@ impl App {
             return Ok(());
         }
         let vars = self.vars(slug, st);
-        let env = state::env(&vars);
         let dir = match cwd {
             Cwd::Main => self.project.main.clone(),
             Cwd::Worktree => {
@@ -318,10 +317,23 @@ impl App {
                 }
             }
         };
+        self.run_commands(label, cmds, &vars, &dir)
+    }
+
+    /// The commands of a hook, rendered with `vars` and run in `dir`, stopping at the
+    /// first failure.
+    pub(crate) fn run_commands(
+        &self,
+        label: &str,
+        cmds: &Commands,
+        vars: &Vars,
+        dir: &Path,
+    ) -> Result<()> {
+        let env = state::env(vars);
         for raw in &cmds.0 {
-            let cmd = tmpl::render(raw, &vars);
+            let cmd = tmpl::render(raw, vars);
             self.info(format!("{label} · {cmd}"));
-            self.exec_shell(&cmd, &dir, &env)?;
+            self.exec_shell(&cmd, dir, &env)?;
         }
         Ok(())
     }
@@ -373,6 +385,7 @@ impl App {
         }
 
         let mut st = WtState {
+            format: state::STATE_FORMAT,
             opts: parse_sets(sets)?,
             ..Default::default()
         };
