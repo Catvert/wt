@@ -124,6 +124,7 @@ wt pick                 # fuzzy picker: worktree, then action
 | `wt down [slug]` | `down` hooks — the checkout and state are kept |
 | `wt ls` / `wt show [slug]` | worktree state |
 | `wt rm [slug] [-y]` | `pre_rm` hooks, worktree removal, `post_rm` hooks |
+| `wt gc [--apply] [--forget slug]` | cleans up after worktrees removed without `wt rm` (dry run by default, see [docs/gc.md](docs/gc.md)) |
 | `wt shell [slug]` | opens a shell at the worktree root |
 | `wt cd [slug]` | changes directory to the worktree (needs `wt shell-init`) |
 | `wt shell-init <bash\|zsh\|fish>` | the shell function `wt cd` needs |
@@ -499,6 +500,9 @@ address and offers a picker as soon as there are several. In `wt tui`, its short
   the project's `.gitignore`, and the state survives a branch change.
 - **The branch survives `wt rm`.** Removing a worktree must never make unmerged work
   disappear; `wt` prints the `git branch -d` command for you to run yourself.
+- **`wt gc` only cleans what is gone.** Removal hooks run only for a worktree whose
+  directory no longer exists, with the options recorded at creation; anything ambiguous
+  is reported, never guessed ([docs/gc.md](docs/gc.md)).
 - **A POSIX shell** (`sh`) runs the hooks, whatever the user's shell (override with
   `WT_SHELL`).
 

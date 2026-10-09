@@ -126,6 +126,7 @@ wt pick                 # sélecteur fuzzy : worktree, puis action
 | `wt down [slug]` | hooks `down` — le checkout et l'état sont conservés |
 | `wt ls` / `wt show [slug]` | état des worktrees |
 | `wt rm [slug] [-y]` | hooks `pre_rm`, retrait du worktree, hooks `post_rm` |
+| `wt gc [--apply] [--forget slug]` | nettoie après des worktrees supprimés sans `wt rm` (simulation par défaut, voir [docs/gc.md](docs/gc.md)) |
 | `wt shell [slug]` | ouvre un shell à la racine du worktree |
 | `wt cd [slug]` | se déplace dans le worktree (nécessite `wt shell-init`) |
 | `wt shell-init <bash\|zsh\|fish>` | la fonction shell dont `wt cd` a besoin |
@@ -517,6 +518,9 @@ raccourci est `o`.
 - **La branche survit à `wt rm`.** Retirer un worktree ne doit jamais faire disparaître
   du travail non fusionné ; `wt` rappelle la commande `git branch -d` à exécuter
   soi-même.
+- **`wt gc` ne nettoie que ce qui a disparu.** Les hooks de suppression ne tournent que
+  pour un worktree dont le dossier n'existe plus, avec les options enregistrées à la
+  création ; tout cas ambigu est signalé, jamais deviné ([docs/gc.md](docs/gc.md)).
 - **Un shell POSIX** (`sh`) exécute les hooks, quel que soit le shell de l'utilisateur
   (surchargeable par `WT_SHELL`).
 
