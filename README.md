@@ -120,11 +120,12 @@ wt pick                 # fuzzy picker: worktree, then action
 | `wt pick` | Skim interface: fuzzy worktree selection, then an action |
 | `wt init [--preset plain\|web] [--force]` | writes an example `wt.toml` |
 | `wt new <slug> [branch] [--from ref] [--set k=v]` | checkout + directories + copies + `post_new` hooks |
+| `wt new <slug> --adopt <path> [--set k=v]` | same, for a git worktree another tool already created (see below) |
 | `wt up [slug] [--set k=v]` | `up` hooks (and port allocation, if any) |
 | `wt down [slug]` | `down` hooks — the checkout and state are kept |
 | `wt ls` / `wt show [slug]` | worktree state |
 | `wt rm [slug] [-y]` | `pre_rm` hooks, worktree removal, `post_rm` hooks |
-| `wt gc [--apply] [--forget slug]` | cleans up after worktrees removed without `wt rm` (dry run by default, see [docs/gc.md](docs/gc.md)) |
+| `wt gc [--apply] [--forget slug] [slug…]` | cleans up after worktrees removed without `wt rm` (dry run by default, see [docs/gc.md](docs/gc.md)) |
 | `wt shell [slug]` | opens a shell at the worktree root |
 | `wt cd [slug]` | changes directory to the worktree (needs `wt shell-init`) |
 | `wt shell-init <bash\|zsh\|fish>` | the shell function `wt cd` needs |
@@ -187,6 +188,24 @@ On the command line that is `wt new <slug> [branch] --from <ref>`. `--from` take
 anything git takes as a start point (a local branch, `origin/dev`, a tag, a commit) and
 only applies to a branch that **does not exist yet**: a branch already written has its
 own history, and wt refuses rather than create something else than what was asked.
+
+### Adopting a worktree created by another tool
+
+An agent orchestrator, an IDE or a script may create git worktrees of its own, wherever
+it keeps them. `wt new <slug> --adopt <path>` gives such a checkout everything `wt new`
+would have: directories, copies, ports, state and `post_new` hooks. The checkout stays
+where it is and `<root>/<slug>` becomes a link to it, so `up`, `down`, `run`, `ls` and the
+dashboard treat it like any other worktree. Called from the tool's own setup step, it
+makes its worktrees ready to use as soon as they exist.
+
+- The path must be a worktree git registers for this repository, other than the main
+  checkout, and not already adopted under another slug.
+- Copies whose destination already exists in the checkout are kept, not overwritten.
+- When a `post_new` hook fails, the link and the state are removed again: the tool can
+  simply retry.
+- `wt rm` removes the adopted checkout as well as the link. When the tool deletes the
+  checkout itself, the link is left dangling and `wt gc` treats the entry as an orphan:
+  removal hooks, then the link and the state go (see [docs/gc.md](docs/gc.md)).
 
 ### Getting into a worktree
 

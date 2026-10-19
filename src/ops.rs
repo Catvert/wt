@@ -380,7 +380,7 @@ impl App {
     ) -> Result<()> {
         validate_slug(slug)?;
         let dir = self.dir(slug);
-        if dir.exists() {
+        if dir.symlink_metadata().is_ok() {
             bail!("{}", t!("err.dir_exists", path = dir.display()));
         }
 
@@ -413,6 +413,95 @@ impl App {
         // record the one actually checked out.
         st.branch = crate::git::current_branch(&dir);
 
+        let st = self.provision(slug, st, false)?;
+        self.ok(t!("ok.created", slug = slug, path = dir.display()).to_string());
+        self.print_endpoints(slug, &st);
+        Ok(())
+    }
+
+    /// `wt new <slug> --adopt <path>`: takes over a checkout another tool created (an
+    /// agent orchestrator, an IDE) and gives it what `wt new` would have. The checkout
+    /// stays where it is; `<root>/<slug>` becomes a link to it, so that every other
+    /// command finds it like any worktree.
+    pub fn cmd_adopt(&self, slug: &str, path: &Path, sets: &[String]) -> Result<()> {
+        validate_slug(slug)?;
+        let dir = self.dir(slug);
+        if dir.symlink_metadata().is_ok() {
+            bail!("{}", t!("err.dir_exists", path = dir.display()));
+        }
+        let target = fs::canonicalize(path)
+            .with_context(|| t!("err.read_failed", path = path.display()).to_string())?;
+
+        let main = fs::canonicalize(&self.project.main).unwrap_or(self.project.main.clone());
+        let registered = crate::git::worktrees(&self.project.main)?
+            .iter()
+            .any(|g| !g.prunable && same_path(&g.path, &target));
+        if target == main || !registered {
+            bail!("{}", t!("err.adopt_not_worktree", path = target.display()));
+        }
+        if let Some(other) = self.list().into_iter().find(|w| {
+            w.state
+                .path
+                .as_deref()
+                .is_some_and(|p| same_path(p, &target))
+        }) {
+            bail!(
+                "{}",
+                t!(
+                    "err.adopt_taken",
+                    path = target.display(),
+                    slug = other.slug
+                )
+            );
+        }
+
+        let st = WtState {
+            format: state::STATE_FORMAT,
+            opts: parse_sets(sets)?,
+            branch: crate::git::current_branch(&target),
+            path: Some(target.clone()),
+            ..Default::default()
+        };
+
+        fs::create_dir_all(&self.root)?;
+        self.info(
+            t!(
+                "info.adopting",
+                path = target.display(),
+                link = dir.display()
+            )
+            .to_string(),
+        );
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&target, &dir).with_context(|| {
+            t!(
+                "err.symlink_failed",
+                from = target.display(),
+                to = dir.display()
+            )
+            .to_string()
+        })?;
+
+        // Undone on failure, so that the other tool's setup can simply run `--adopt`
+        // again: the checkout itself was never ours to remove.
+        let st = match self.provision(slug, st, true) {
+            Ok(st) => st,
+            Err(e) => {
+                let _ = fs::remove_file(&dir);
+                state::forget(&self.root, slug);
+                return Err(e);
+            }
+        };
+        self.ok(t!("ok.adopted", slug = slug, path = target.display()).to_string());
+        self.print_endpoints(slug, &st);
+        Ok(())
+    }
+
+    /// What follows the checkout in `new` and `adopt`: directories, copies, ports, state,
+    /// `post_new` hooks. An adopted checkout may already hold some of the copies (the
+    /// other tool ran its own setup): those are kept rather than overwritten.
+    fn provision(&self, slug: &str, mut st: WtState, keep_existing: bool) -> Result<WtState> {
+        let dir = self.dir(slug);
         for d in &self.project.config.dirs {
             let rendered = tmpl::render(d, &self.vars(slug, &st));
             fs::create_dir_all(dir.join(&rendered))
@@ -429,6 +518,10 @@ impl App {
                     continue;
                 }
                 bail!("{}", t!("err.copy_source_missing", path = from.display()));
+            }
+            if keep_existing && dir.join(&to_rel).symlink_metadata().is_ok() {
+                self.info(t!("info.copy_kept", path = to_rel).to_string());
+                continue;
             }
             self.info(
                 t!(
@@ -453,10 +546,7 @@ impl App {
             &st,
             Cwd::Worktree,
         )?;
-
-        self.ok(t!("ok.created", slug = slug, path = dir.display()).to_string());
-        self.print_endpoints(slug, &st);
-        Ok(())
+        Ok(st)
     }
 
     // --------------------------------------------------------------------------------
@@ -538,11 +628,16 @@ impl App {
             Cwd::Worktree,
         )?;
 
-        let branch = crate::git::current_branch(&self.dir(slug));
-        crate::git::worktree_remove(&self.project.main, &self.dir(slug))?;
+        let dir = self.dir(slug);
+        let checkout = state::checkout(&dir, &st);
+        let branch = crate::git::current_branch(&checkout);
+        crate::git::worktree_remove(&self.project.main, &checkout)?;
         // `git worktree remove` leaves a directory behind when it holds ignored files
         // (vendor/, node_modules/…).
-        let _ = fs::remove_dir_all(self.dir(slug));
+        let _ = fs::remove_dir_all(&checkout);
+        if checkout != dir {
+            let _ = fs::remove_file(&dir);
+        }
         state::forget(&self.root, slug);
 
         self.run_hook(
@@ -1056,6 +1151,16 @@ impl App {
         }
         out
     }
+}
+
+/// Git prints the paths it was given, which may differ from the canonical one (a link in
+/// the way, a trailing component resolved differently): compare both spellings.
+pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
+    a == b
+        || matches!(
+            (fs::canonicalize(a), fs::canonicalize(b)),
+            (Ok(x), Ok(y)) if x == y
+        )
 }
 
 pub fn validate_slug(slug: &str) -> Result<()> {

@@ -1,6 +1,8 @@
 _version: 1
 
 err:
+  adopt_not_worktree: "%{path} is not a git worktree of this repository"
+  adopt_taken: "%{path} is already adopted as '%{slug}'"
   git_missing: "git not found in PATH"
   git_failed: "git %{args}: %{message}"
   not_a_repo: "%{path} is not inside a git repository"
@@ -41,6 +43,7 @@ label:
   root: "root"
 
 ok:
+  adopted: "worktree '%{slug}' adopted: %{path}"
   created: "worktree '%{slug}' created — %{path}"
   started: "worktree '%{slug}' started"
   stopped: "worktree '%{slug}' stopped — %{kept}"
@@ -65,6 +68,8 @@ hint:
   no_shell_integration: "shell integration missing — add `eval \"$(wt shell-init %{shell})\"` to your rc file, or use `wt shell %{slug}`"
 
 info:
+  adopting: "adopting %{path} (link %{link})"
+  copy_kept: "%{path} already present, kept"
   creating: "creating worktree (%{branch})"
   creating_from: "creating worktree (%{branch}, from %{from})"
   copying: "copy %{from} -> %{to} (%{mode})"
@@ -198,6 +203,7 @@ title:
   browser: "browser · %{slug}"
 
 gc:
+  remove_link: "link · remove %{path}"
   nothing: "nothing to clean: every worktree wt knows of still exists"
   orphan: "orphan %{slug} — branch %{branch}, %{options}"
   no_options: "no options"

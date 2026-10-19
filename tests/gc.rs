@@ -382,3 +382,160 @@ fn rm_does_not_set_the_gc_variable() {
     let log = f.log();
     assert!(log.contains("pre_rm normal db=x gc= "), "{log}");
 }
+
+// --------------------------------------------------------------------------------------
+// Checkouts adopted with `wt new --adopt`: created by another tool, outside the root.
+// --------------------------------------------------------------------------------------
+
+impl Fixture {
+    /// A git worktree created the way another tool would: outside the root, on its own
+    /// branch, without `wt` knowing.
+    fn foreign_worktree(&self, outside: &TempDir, name: &str) -> PathBuf {
+        let path = outside.path().join(name);
+        self.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            &format!("tool/{name}"),
+            path.to_str().unwrap(),
+        ]);
+        fs::canonicalize(path).unwrap()
+    }
+}
+
+#[test]
+fn an_adopted_checkout_is_linked_provisioned_and_removed_by_rm() {
+    let f = fixture();
+    let outside = tempfile::tempdir().unwrap();
+    let ext = f.foreign_worktree(&outside, "agent-1");
+
+    let out = f.wt_ok(&[
+        "new",
+        "agent",
+        "--adopt",
+        ext.to_str().unwrap(),
+        "--set",
+        "db=shared",
+    ]);
+    assert!(out.contains("adopted"), "{out}");
+    assert_eq!(fs::read_link(f.dir("agent")).unwrap(), ext);
+    assert!(f.log().contains("new agent db=shared"), "{}", f.log());
+    let state = fs::read_to_string(f.state("agent")).unwrap();
+    assert!(state.contains("branch = \"tool/agent-1\""), "{state}");
+    assert!(
+        state.contains(&format!("path = \"{}\"", ext.display())),
+        "{state}"
+    );
+    assert!(f.wt_ok(&["ls"]).contains("agent"));
+
+    // Alive: gc has nothing to say about it.
+    let out = f.wt_ok(&["gc"]);
+    assert!(out.contains("nothing to clean"), "{out}");
+
+    f.wt_ok(&["rm", "agent", "--yes"]);
+    assert!(
+        f.log().contains("pre_rm agent db=shared gc="),
+        "{}",
+        f.log()
+    );
+    assert!(!ext.exists(), "the adopted checkout survived rm");
+    assert!(
+        f.dir("agent").symlink_metadata().is_err(),
+        "the link survived rm"
+    );
+    assert!(!f.state("agent").exists());
+    assert!(!f.git_worktrees().contains("agent-1"));
+}
+
+#[test]
+fn adopt_refuses_what_is_not_a_free_worktree_of_the_repository() {
+    let f = fixture();
+    let outside = tempfile::tempdir().unwrap();
+    let plain = outside.path().join("plain");
+    fs::create_dir_all(&plain).unwrap();
+
+    let out = f.wt(&["new", "plain", "--adopt", plain.to_str().unwrap()]);
+    assert!(!out.status.success());
+    assert!(
+        text(&out.stderr).contains("not a git worktree"),
+        "{}",
+        text(&out.stderr)
+    );
+    assert!(f.dir("plain").symlink_metadata().is_err());
+
+    let out = f.wt(&["new", "main", "--adopt", f.main().to_str().unwrap()]);
+    assert!(!out.status.success());
+
+    let ext = f.foreign_worktree(&outside, "twice");
+    f.wt_ok(&["new", "first", "--adopt", ext.to_str().unwrap()]);
+    let out = f.wt(&["new", "second", "--adopt", ext.to_str().unwrap()]);
+    assert!(!out.status.success());
+    assert!(
+        text(&out.stderr).contains("already adopted as 'first'"),
+        "{}",
+        text(&out.stderr)
+    );
+    assert!(f.dir("second").symlink_metadata().is_err());
+    assert!(!f.state("second").exists());
+
+    let out = f.wt(&[
+        "new",
+        "both",
+        "--adopt",
+        ext.to_str().unwrap(),
+        "--from",
+        "main",
+    ]);
+    assert!(!out.status.success(), "--adopt and --from are exclusive");
+}
+
+#[test]
+fn an_adopted_checkout_deleted_by_its_tool_is_cleaned_with_its_link() {
+    let f = fixture();
+    let outside = tempfile::tempdir().unwrap();
+    let ext = f.foreign_worktree(&outside, "agent-2");
+    f.wt_ok(&[
+        "new",
+        "deleted",
+        "--adopt",
+        ext.to_str().unwrap(),
+        "--set",
+        "db=isolated",
+    ]);
+    // What the other tool does: its own `git worktree remove`, the link left dangling.
+    f.git(&["worktree", "remove", "--force", ext.to_str().unwrap()]);
+    assert!(f.dir("deleted").symlink_metadata().is_ok());
+
+    let out = f.wt_ok(&["gc"]);
+    assert!(out.contains("orphan deleted"), "{out}");
+    assert!(out.contains("link · remove"), "{out}");
+
+    let out = f.wt_ok(&["gc", "--apply"]);
+    assert!(out.contains("deleted cleaned up"), "{out}");
+    assert!(
+        f.log().contains("pre_rm deleted db=isolated gc=1"),
+        "{}",
+        f.log()
+    );
+    assert!(
+        f.dir("deleted").symlink_metadata().is_err(),
+        "the dangling link survived"
+    );
+    assert!(!f.state("deleted").exists());
+}
+
+#[test]
+fn gc_can_be_limited_to_some_slugs() {
+    let f = fixture();
+    f.wt_ok(&["new", "one", "--set", "db=isolated"]);
+    f.wt_ok(&["new", "two", "--set", "db=isolated"]);
+    fs::remove_dir_all(f.dir("one")).unwrap();
+    fs::remove_dir_all(f.dir("two")).unwrap();
+
+    let out = f.wt_ok(&["gc", "--apply", "one"]);
+    assert!(out.contains("one cleaned up"), "{out}");
+    assert!(!out.contains("two"), "{out}");
+    assert!(!f.state("one").exists());
+    assert!(f.state("two").exists());
+}

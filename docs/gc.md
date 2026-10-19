@@ -10,12 +10,16 @@ wt gc                      # dry run: lists what it would do, changes nothing
 wt gc --apply              # does it
 wt gc --forget <slug>      # dry run of forgetting an entry without running its hooks
 wt gc --apply --forget <slug>
+wt gc --apply <slug>…      # only these entries
 ```
 
 ## What is examined
 
 - the state files `<root>/.wt/<slug>.toml` — every worktree created by `wt new` has one;
-- the git worktrees registered under `<root>` (`git worktree list --porcelain`).
+- the git worktrees registered under `<root>` (`git worktree list --porcelain`), and for
+  an adopted checkout (`wt new --adopt`), the one registered at the path its state records.
+
+Slugs given on the command line restrict everything below to those entries.
 
 ## Classification
 
@@ -34,6 +38,15 @@ Each slug falls into exactly one class. Only the first two are ever acted upon.
 
 A resource whose worktree still exists is never touched: the only paths that run hooks
 are the ones where `<root>/<slug>` does not exist at all.
+
+### Adopted checkouts
+
+For an entry adopted with `wt new --adopt`, `<root>/<slug>` is a link to a checkout
+another tool created. That tool usually deletes the checkout itself, with its own
+`git worktree remove`, and the link is left dangling. When the link still points at the
+path recorded in the state and that path is gone, the entry counts as absent: it is
+classified like any other, and an orphan loses its link along with its state. A link
+pointing anywhere else is never treated that way.
 
 ### Old states
 
@@ -59,8 +72,9 @@ In this order, stopping at the first failure:
    main checkout. `{{path}}` / `$WT_PATH` still name the former location.
 2. git metadata: `git worktree remove <path>` if git still registers it (no `--force`:
    git refuses if the directory came back).
-3. `post_rm` hooks, working directory = main repository, as with `wt rm`.
-4. the state file is forgotten — last, so that a failed cleanup can be retried.
+3. for an adopted checkout, the dangling link `<root>/<slug>` is removed.
+4. `post_rm` hooks, working directory = main repository, as with `wt rm`.
+5. the state file is forgotten — last, so that a failed cleanup can be retried.
 
 During `wt gc`, hooks also receive `$WT_GC=1` (`{{gc}}` = `1`): a hook can skip what only
 makes sense with a checkout (`test -n "$WT_GC" || docker compose … down`).

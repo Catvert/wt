@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Result};
 
 use crate::git::{self, GitWorktree};
-use crate::ops::{validate_slug, App};
+use crate::ops::{same_path, validate_slug, App};
 use crate::state::{self, WtState};
 use crate::tmpl::{self, Vars};
 
@@ -100,7 +100,14 @@ impl App {
         let mut out = Vec::new();
         for slug in slugs {
             let dir = self.dir(&slug);
-            let git_entry = by_slug.get(&slug).copied();
+            // Lenient read, only to know whether the checkout was adopted: the strict one
+            // below decides whether hooks may run from it.
+            let known = state::load(&self.root, &slug);
+            let adopted = known.path.clone().filter(|p| state::links_to(&dir, p));
+            let git_entry = by_slug.get(&slug).copied().or_else(|| {
+                let p = adopted.as_deref()?;
+                gits.iter().find(|g| same_path(&g.path, p))
+            });
             let has_state = state::state_path(&self.root, &slug).is_file();
             let git_path = git_entry.map(|g| g.path.clone());
             let entry = |kind, state| GcEntry {
@@ -111,8 +118,9 @@ impl App {
             };
 
             // Anything at that path — directory, file, even a dangling link — means the
-            // worktree may still be there: no hook ever runs for it.
-            if dir.symlink_metadata().is_ok() {
+            // worktree may still be there: no hook ever runs for it. The one exception is
+            // the link `wt new --adopt` made, once the checkout it points to is gone.
+            if state::present(&dir, &known) {
                 let registered = git_entry.is_some_and(|g| !g.prunable);
                 if !registered {
                     out.push(entry(GcKind::NotWorktree, None));
@@ -137,7 +145,10 @@ impl App {
             let elsewhere = (!st.branch.is_empty())
                 .then(|| {
                     gits.iter().find(|g| {
-                        !g.prunable && g.path != dir && g.branch.as_deref() == Some(&st.branch)
+                        !g.prunable
+                            && g.path != dir
+                            && adopted.as_deref().is_none_or(|p| !same_path(&g.path, p))
+                            && g.branch.as_deref() == Some(&st.branch)
                     })
                 })
                 .flatten();
@@ -161,11 +172,14 @@ impl App {
     }
 
     /// `wt gc [--apply] [--forget slug…]`.
-    pub fn cmd_gc(&self, apply: bool, forget: &[String]) -> Result<()> {
+    pub fn cmd_gc(&self, apply: bool, forget: &[String], only: &[String]) -> Result<()> {
         if !forget.is_empty() {
             return self.gc_forget(apply, forget);
         }
-        let entries = self.gc_scan()?;
+        let mut entries = self.gc_scan()?;
+        if !only.is_empty() {
+            entries.retain(|e| only.contains(&e.slug));
+        }
         let todo = entries.iter().filter(|e| e.kind.actionable()).count();
         let skipped = entries.len() - todo;
         if entries.is_empty() {
@@ -262,6 +276,12 @@ impl App {
                 if let Some(p) = &e.git_path {
                     lines.push(format!("    git · git worktree remove {}", p.display()));
                 }
+                if st.path.is_some() {
+                    lines.push(format!(
+                        "    {}",
+                        t!("gc.remove_link", path = self.dir(&e.slug).display())
+                    ));
+                }
                 for raw in &hooks.post_rm.0 {
                     lines.push(format!("    post_rm · {}", tmpl::render(raw, &vars)));
                 }
@@ -288,7 +308,8 @@ impl App {
     /// leaves the entry in place for the next `wt gc`.
     fn gc_clean(&self, e: &GcEntry) -> Result<()> {
         // Checked again right before acting: the scan may be a few hooks old.
-        if self.dir(&e.slug).symlink_metadata().is_ok() {
+        let known = e.state.clone().unwrap_or_default();
+        if state::present(&self.dir(&e.slug), &known) {
             bail!(
                 "{}",
                 t!("gc.skip.not_worktree", path = self.dir(&e.slug).display())
@@ -307,6 +328,17 @@ impl App {
                 }
                 if let Some(p) = &e.git_path {
                     git::worktree_forget(&self.project.main, p)?;
+                }
+                if let Some(p) = &st.path {
+                    let dir = self.dir(&e.slug);
+                    if state::links_to(&dir, p) {
+                        fs::remove_file(&dir).map_err(|err| {
+                            anyhow::anyhow!(
+                                "{}: {err}",
+                                t!("err.write_failed", path = dir.display())
+                            )
+                        })?;
+                    }
                 }
                 self.run_commands("post_rm", &hooks.post_rm, &vars, &self.project.main)?;
                 state::remove(&self.root, &e.slug)?;
@@ -337,7 +369,8 @@ impl App {
                 continue;
             }
             let dir = self.dir(slug);
-            if dir.symlink_metadata().is_ok() {
+            let known = state::load(&self.root, slug);
+            if state::present(&dir, &known) {
                 errors.push(t!("gc.forget_exists", slug = slug, path = dir.display()).to_string());
                 continue;
             }
@@ -349,6 +382,13 @@ impl App {
             if !apply {
                 self.out(t!("gc.would_forget", slug = slug, path = path.display()).to_string());
                 continue;
+            }
+            if known
+                .path
+                .as_deref()
+                .is_some_and(|p| state::links_to(&dir, p))
+            {
+                let _ = fs::remove_file(&dir);
             }
             match state::remove(&self.root, slug) {
                 Ok(()) => self.ok(t!("gc.forgotten", slug = slug).to_string()),

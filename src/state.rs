@@ -36,6 +36,35 @@ pub struct WtState {
     /// instead of falling back to an empty configuration.
     #[serde(default)]
     pub opts: BTreeMap<String, String>,
+    /// Checkout taken over by `wt new --adopt`, created elsewhere by another tool:
+    /// `<root>/<slug>` is then a link to it. Absent for a checkout `wt` created itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<PathBuf>,
+}
+
+/// Where the checkout of a worktree really is: the adopted path when `<root>/<slug>` is
+/// still the link `wt` made to it, otherwise `<root>/<slug>` itself.
+pub fn checkout(dir: &Path, state: &WtState) -> PathBuf {
+    match &state.path {
+        Some(p) if links_to(dir, p) => p.clone(),
+        _ => dir.to_path_buf(),
+    }
+}
+
+/// Is `dir` a link pointing at `target`? Read without following it: the target may
+/// already be gone.
+pub fn links_to(dir: &Path, target: &Path) -> bool {
+    fs::read_link(dir).is_ok_and(|t| t == target)
+}
+
+/// Does anything of the worktree remain on disk? For an adopted checkout the link alone
+/// does not count: the tool that created the checkout may have deleted it, leaving the
+/// link dangling, and that is exactly the case `wt gc` cleans up after.
+pub fn present(dir: &Path, state: &WtState) -> bool {
+    match &state.path {
+        Some(p) if links_to(dir, p) => p.symlink_metadata().is_ok(),
+        _ => dir.symlink_metadata().is_ok(),
+    }
 }
 
 pub fn state_path(root: &Path, slug: &str) -> PathBuf {

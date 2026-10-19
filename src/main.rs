@@ -72,6 +72,11 @@ enum Cmd {
         /// commit. Defaults to the main repository's HEAD.
         #[arg(long, value_name = "REF", add = complete::start_points())]
         from: Option<String>,
+        /// Take over a git worktree another tool already created at PATH instead of
+        /// checking one out: <root>/<slug> becomes a link to it, then the directories,
+        /// copies, ports and post_new hooks run as for a new one.
+        #[arg(long, value_name = "PATH", conflicts_with_all = ["branch", "from"])]
+        adopt: Option<std::path::PathBuf>,
         /// Option passed to hooks, available as {{opt.key}}. Repeatable.
         #[arg(long = "set", value_name = "KEY=VALUE")]
         set: Vec<String>,
@@ -119,6 +124,9 @@ enum Cmd {
         /// named entries are then handled.
         #[arg(long, value_name = "SLUG")]
         forget: Vec<String>,
+        /// Only these entries. Default: every entry found.
+        #[arg(value_name = "SLUG")]
+        only: Vec<String>,
     },
     /// Opens a shell at the worktree root (to run claude, a build, a rebase…).
     ///
@@ -240,9 +248,16 @@ fn try_main() -> Result<()> {
         }
         Some(Cmd::New {
             slug,
+            adopt: Some(path),
+            set,
+            ..
+        }) => app.cmd_adopt(&slug, &path, &set),
+        Some(Cmd::New {
+            slug,
             branch,
             from,
             set,
+            ..
         }) => app.cmd_new(&slug, branch.as_deref(), from.as_deref(), &set),
         Some(Cmd::Up { slug, set }) => {
             let slug = selected_slug(&app, slug)?;
@@ -271,7 +286,11 @@ fn try_main() -> Result<()> {
             let slug = selected_slug(&app, slug)?;
             app.cmd_rm(&slug, yes)
         }
-        Some(Cmd::Gc { apply, forget }) => app.cmd_gc(apply, &forget),
+        Some(Cmd::Gc {
+            apply,
+            forget,
+            only,
+        }) => app.cmd_gc(apply, &forget, &only),
         Some(Cmd::Shell { slug }) => {
             let slug = match slug {
                 Some(pattern) => app.choose_slug(Some(&pattern))?,

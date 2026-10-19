@@ -122,11 +122,12 @@ wt pick                 # sélecteur fuzzy : worktree, puis action
 | `wt pick` | interface Skim : choix fuzzy d'un worktree, puis d'une action |
 | `wt init [--preset plain\|web] [--force]` | écrit un `wt.toml` d'exemple |
 | `wt new <slug> [branche] [--from ref] [--set k=v]` | checkout + dossiers + copies + hooks `post_new` |
+| `wt new <slug> --adopt <chemin> [--set k=v]` | idem, pour un worktree git déjà créé par un autre outil (voir plus bas) |
 | `wt up [slug] [--set k=v]` | hooks `up` (et allocation des ports, s'il y en a) |
 | `wt down [slug]` | hooks `down` — le checkout et l'état sont conservés |
 | `wt ls` / `wt show [slug]` | état des worktrees |
 | `wt rm [slug] [-y]` | hooks `pre_rm`, retrait du worktree, hooks `post_rm` |
-| `wt gc [--apply] [--forget slug]` | nettoie après des worktrees supprimés sans `wt rm` (simulation par défaut, voir [docs/gc.md](docs/gc.md)) |
+| `wt gc [--apply] [--forget slug] [slug…]` | nettoie après des worktrees supprimés sans `wt rm` (simulation par défaut, voir [docs/gc.md](docs/gc.md)) |
 | `wt shell [slug]` | ouvre un shell à la racine du worktree |
 | `wt cd [slug]` | se déplace dans le worktree (nécessite `wt shell-init`) |
 | `wt shell-init <bash\|zsh\|fish>` | la fonction shell dont `wt cd` a besoin |
@@ -191,6 +192,25 @@ ce que git accepte comme point de départ (branche locale, `origin/dev`, un tag,
 commit) et ne s'applique qu'à une branche **qui n'existe pas encore** : une branche déjà
 écrite a son histoire, et wt refuse plutôt que de créer autre chose que ce qui est
 demandé.
+
+### Adopter un worktree créé par un autre outil
+
+Un orchestrateur d'agents, un IDE ou un script peuvent créer leurs propres worktrees git,
+là où ils les rangent. `wt new <slug> --adopt <chemin>` donne à un tel checkout tout ce que
+`wt new` lui aurait donné : dossiers, copies, ports, état et hooks `post_new`. Le checkout
+reste où il est et `<root>/<slug>` devient un lien vers lui : `up`, `down`, `run`, `ls` et
+le tableau de bord le traitent comme n'importe quel worktree. Appelé depuis l'étape de
+préparation de l'outil, il rend ses worktrees utilisables dès leur création.
+
+- Le chemin doit être un worktree que git enregistre pour ce dépôt, autre que le checkout
+  principal, et pas déjà adopté sous un autre slug.
+- Les copies dont la destination existe déjà dans le checkout sont conservées, pas
+  écrasées.
+- Si un hook `post_new` échoue, le lien et l'état sont retirés : l'outil n'a qu'à
+  relancer.
+- `wt rm` supprime le checkout adopté en plus du lien. Quand l'outil supprime lui-même le
+  checkout, le lien pointe dans le vide et `wt gc` traite l'entrée comme orpheline : hooks de
+  suppression, puis le lien et l'état disparaissent (voir [docs/gc.md](docs/gc.md)).
 
 ### Entrer dans un worktree
 
