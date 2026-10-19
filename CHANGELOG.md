@@ -6,6 +6,29 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-10-19
+
+### Added
+
+- `wt gc` cleans up after worktrees removed without `wt rm` (a `git worktree remove`, a
+  deleted directory): the removal hooks run with the options recorded in the state, `pre_rm`
+  in an empty temporary directory with `$WT_GC=1`, then the git metadata and the state go.
+  Dry run by default, `--apply` to act, `--forget <slug>` to drop an entry without hooks,
+  `wt gc <slug>…` to limit it to some entries. Ambiguous cases (directory still present,
+  locked, moved, unreadable or old state without options) are reported, never acted upon.
+  The contract is in `docs/gc.md`.
+- `wt new <slug> --adopt <path>` takes over a git worktree another tool created (an agent
+  orchestrator, an IDE): `<root>/<slug>` becomes a link to it, then directories, copies,
+  ports, state and `post_new` hooks run as for a new worktree. Copies already present in
+  the checkout are kept; a failing hook removes the link and the state again. `wt rm`
+  removes the adopted checkout and the link; when the tool deletes the checkout itself,
+  `wt gc` treats the dangling link as an orphan.
+
+### Changed
+
+- `wt new` records `format = 1` in the state, so that `wt gc` can trust an empty option
+  set.
+
 ## [0.8.0] — 2026-08-23
 
 ### Added
