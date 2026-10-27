@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `--json` on `wt ls`, `wt show`, `wt open --list`, `wt root` and `wt tasks`: stable fields,
+  independent of `WT_LANG`, for tools driving wt from outside. `checkout` gives where an
+  adopted worktree really is, `root --json` what the wt.toml declares and its tasks.
+- `integrations/paseo/`: a Paseo plugin built on it. It adopts the worktrees Paseo creates
+  (unless the project's `paseo.json` does it in `worktree.setup`), adds a `wt` button and
+  panel to the workspace (addresses, ports, options, probes, tasks, `up`/`down` in a Paseo
+  terminal) and runs `wt gc --apply` once Paseo has deleted an archived worktree.
+
 ## [0.9.0] — 2026-10-19
 
 ### Added

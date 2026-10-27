@@ -531,3 +531,79 @@ fn completion_candidates_come_from_the_project() {
         wt(dir).args(["rm", slug, "-y"]).output().unwrap();
     }
 }
+
+#[test]
+fn json_output_is_stable_and_untranslated() {
+    let project = project(
+        r#"
+branch = "wt/{{slug}}"
+
+[ports.dev]
+base = 4900
+allocate = "new"
+
+[open]
+url = "http://localhost:{{port.dev}}"
+label = "app"
+source = "printf 'http://admin.localhost\tadmin\n'"
+
+[status]
+up = "test -f .up"
+
+[status.info]
+greeting = "echo hi"
+
+[tasks.hello]
+description = "says hello"
+run = "echo hello"
+"#,
+    );
+    let dir = project.path();
+    wt(dir).args(["new", "demo"]).output().unwrap();
+    let json = |args: &[&str]| -> serde_json::Value {
+        // French on purpose: the JSON must not follow the locale.
+        let out = wt(dir).env("WT_LANG", "fr").args(args).output().unwrap();
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).expect("valid JSON")
+    };
+
+    let ls = json(&["ls", "--json"]);
+    let demo = &ls[0];
+    assert_eq!(demo["slug"], "demo");
+    assert_eq!(demo["branch"], "wt/demo");
+    assert_eq!(demo["up"], false);
+    assert_eq!(demo["adopted"], false);
+    assert_eq!(demo["ports"]["dev"], 4900);
+    assert_eq!(demo["url"], "http://localhost:4900");
+    assert_eq!(demo["checkout"], demo["dir"]);
+
+    let show = json(&["show", "demo", "--json"]);
+    assert_eq!(show["slug"], "demo");
+    assert_eq!(show["info"]["greeting"], "hi");
+    assert_eq!(show["links"][0]["label"], "app");
+    assert_eq!(show["links"][1]["url"], "http://admin.localhost");
+    assert_eq!(show["changes"].as_array().unwrap().len(), 0);
+
+    let links = json(&["open", "demo", "--list", "--json"]);
+    assert_eq!(links, show["links"]);
+
+    let root = json(&["root", "--json"]);
+    assert_eq!(root["has_ports"], true);
+    assert_eq!(root["has_up"], false);
+    assert_eq!(root["tasks"][0]["name"], "hello");
+    assert_eq!(json(&["tasks", "--json"]), root["tasks"]);
+
+    // `--json` only makes sense with `--list`: opening a browser has no output to format.
+    assert!(!wt(dir)
+        .args(["open", "demo", "--json"])
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    wt(dir).args(["rm", "demo", "-y"]).output().unwrap();
+}

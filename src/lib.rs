@@ -20,6 +20,7 @@ pub mod fuzzy;
 pub mod gc;
 pub mod git;
 pub mod i18n;
+pub mod json;
 pub mod ops;
 pub mod state;
 pub mod tmpl;

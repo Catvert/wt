@@ -1,0 +1,88 @@
+import { defineRpc } from "@getpaseo/plugin";
+import { z } from "zod";
+
+// Les formes de `wt … --json` (src/json.rs dans wt) : des champs ajoutés, jamais renommés.
+export const linkSchema = z.object({ url: z.string(), label: z.string() });
+
+export const taskSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  interactive: z.boolean(),
+});
+
+export const projectSchema = z.object({
+  name: z.string(),
+  config: z.string(),
+  main: z.string(),
+  root: z.string(),
+  has_up: z.boolean(),
+  has_down: z.boolean(),
+  has_status: z.boolean(),
+  has_ports: z.boolean(),
+  has_open: z.boolean(),
+  tasks: z.array(taskSchema),
+});
+
+export const worktreeSchema = z.object({
+  slug: z.string(),
+  dir: z.string(),
+  checkout: z.string(),
+  adopted: z.boolean(),
+  branch: z.string(),
+  up: z.boolean().nullable(),
+  ports: z.record(z.string(), z.number()),
+  opts: z.record(z.string(), z.string()),
+  url: z.string().nullable(),
+});
+
+export const detailSchema = worktreeSchema.extend({
+  commit: z.string(),
+  info: z.record(z.string(), z.string()),
+  changes: z.array(z.string()),
+  links: z.array(linkSchema),
+});
+
+export type WtProject = z.infer<typeof projectSchema>;
+export type WtWorktree = z.infer<typeof worktreeSchema>;
+export type WtDetail = z.infer<typeof detailSchema>;
+export type WtLink = z.infer<typeof linkSchema>;
+
+export const wtInfoSchema = z.object({
+  // none : pas de wt.toml · main : le dépôt principal · worktree : géré par wt
+  // adopting : adoption en cours · unmanaged : checkout du projet que wt ne connaît pas
+  kind: z.enum(["none", "main", "worktree", "adopting", "unmanaged"]),
+  project: projectSchema.nullable(),
+  worktree: worktreeSchema.nullable(),
+  detail: detailSchema.nullable(),
+  // Adresse du proxy des worktrees quand la machine en a un (wt-proxy-url, sur le VPS).
+  proxyUrl: z.string().nullable(),
+  error: z.string().nullable(),
+});
+export type WtInfo = z.infer<typeof wtInfoSchema>;
+
+export const wtInfo = defineRpc({
+  name: "wt.info",
+  // detail : lance aussi `wt show` (sondes [status.info] et [open] source), pour les vues ouvertes.
+  input: z.object({ directory: z.string(), detail: z.boolean().default(false) }),
+  output: wtInfoSchema,
+});
+
+export const wtAdopt = defineRpc({
+  name: "wt.adopt",
+  input: z.object({ directory: z.string() }),
+  output: z.object({ ok: z.boolean(), output: z.string() }),
+});
+
+/** Les adresses à proposer : le proxy, puis celles de wt, sinon une par port. */
+export function addresses(info: WtInfo): WtLink[] {
+  const out: WtLink[] = [];
+  if (info.proxyUrl) out.push({ url: info.proxyUrl, label: "proxy" });
+  const links = info.detail?.links ?? (info.worktree?.url ? [{ url: info.worktree.url, label: "application" }] : []);
+  out.push(...links.filter((l) => !out.some((o) => o.url === l.url)));
+  if (out.length === 0 && info.worktree) {
+    for (const [name, port] of Object.entries(info.worktree.ports)) {
+      out.push({ url: `http://localhost:${port}`, label: name });
+    }
+  }
+  return out;
+}

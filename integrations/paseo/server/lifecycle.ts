@@ -1,0 +1,88 @@
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, join, sep } from "node:path";
+import { adopting, findWorktree, real, run, wt } from "./wt";
+
+// Le plugin ne touche qu'aux worktrees que Paseo a créés lui-même : un dossier local
+// ouvert dans Paseo, ou un checkout d'un autre outil, reste à son propriétaire.
+const paseoWorktrees = join(process.env.PASEO_HOME ?? join(homedir(), ".paseo"), "worktrees") + sep;
+
+const log = (msg: string) => console.log(`[wt] ${msg}`);
+
+function slugFor(directory: string, taken: Set<string>) {
+  const base =
+    basename(directory)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 30)
+      .replace(/-+$/, "") || "paseo";
+  let slug = base;
+  for (let i = 2; taken.has(slug); i++) slug = `${base}-${i}`;
+  return slug;
+}
+
+/** Un `paseo.json` qui a son propre `worktree.setup` gère déjà l'adoption (scripts/wt/paseo.sh). */
+function projectAdoptsItself(directory: string) {
+  try {
+    const config = JSON.parse(readFileSync(join(directory, "paseo.json"), "utf8"));
+    const setup = config?.worktree?.setup;
+    return typeof setup === "string" ? setup.trim() !== "" : Array.isArray(setup) && setup.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** `wt new --adopt` : port, copies, post_new (npm ci…) comme pour un worktree créé par wt. */
+export async function adopt(directory: string, { automatic }: { automatic: boolean }) {
+  if (automatic && !directory.startsWith(paseoWorktrees)) return { ok: false, output: "pas un worktree Paseo" };
+  const project = await wt.root(directory);
+  if (!project) return { ok: false, output: "pas de wt.toml" };
+  if ((await real(directory)) === (await real(project.main))) return { ok: false, output: "dépôt principal" };
+  if (automatic && projectAdoptsItself(directory)) {
+    log(`${directory} : adoption laissée au worktree.setup du paseo.json`);
+    return { ok: false, output: "adoption gérée par paseo.json" };
+  }
+  const worktrees = await wt.ls(project.main);
+  if (await findWorktree(worktrees, directory)) return { ok: true, output: "déjà adopté" };
+  if (adopting.has(directory)) return { ok: false, output: "adoption déjà en cours" };
+
+  const slug = slugFor(directory, new Set(worktrees.map((w) => w.slug)));
+  adopting.add(directory);
+  log(`${project.name} : adoption de ${directory} en ${slug}`);
+  try {
+    // Les hooks post_new peuvent être longs (npm ci, composer install) : 15 minutes.
+    const r = await run("wt", ["new", slug, "--adopt", directory, "-C", project.main], 15 * 60_000);
+    const output = (r.stdout + r.stderr).trim().split("\n").slice(-20).join("\n");
+    log(`${slug} : ${r.ok ? "adopté" : "échec de l'adoption"}\n${output}`);
+    return { ok: r.ok, output };
+  } finally {
+    adopting.delete(directory);
+  }
+}
+
+/**
+ * Après l'archivage, Paseo supprime le checkout (git worktree remove, puis rm). `wt gc`
+ * ne nettoie qu'un worktree disparu : on attend donc la suppression, puis il lance les
+ * hooks de retrait (pre_rm dans un dossier vide, post_rm) et efface l'état et le port.
+ */
+export async function release(directory: string) {
+  if (!directory.startsWith(paseoWorktrees)) return;
+  const project = await wt.root(directory);
+  if (!project) return;
+  const worktree = await findWorktree(await wt.ls(project.main), directory);
+  if (!worktree) return;
+
+  const deadline = Date.now() + 5 * 60_000;
+  // Le checkout, pas le lien <root>/<slug> : celui-ci reste, pendant, jusqu'au gc.
+  const present = () => existsSync(worktree.checkout);
+  while (present() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 3000));
+  if (present()) {
+    // Encore là : un autre workspace l'utilise, ou Paseo n'a pas tout supprimé.
+    log(`${worktree.slug} : ${worktree.checkout} toujours présent, wt gc non lancé`);
+    return;
+  }
+  const r = await run("wt", ["gc", "--apply", worktree.slug, "-C", project.main], 10 * 60_000);
+  log(`${worktree.slug} : wt gc ${r.ok ? "terminé" : "en échec"}\n${(r.stdout + r.stderr).trim()}`);
+}
+

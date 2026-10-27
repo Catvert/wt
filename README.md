@@ -123,16 +123,16 @@ wt pick                 # fuzzy picker: worktree, then action
 | `wt new <slug> --adopt <path> [--set k=v]` | same, for a git worktree another tool already created (see below) |
 | `wt up [slug] [--set k=v]` | `up` hooks (and port allocation, if any) |
 | `wt down [slug]` | `down` hooks — the checkout and state are kept |
-| `wt ls` / `wt show [slug]` | worktree state |
+| `wt ls` / `wt show [slug]` | worktree state (`--json`: see below) |
 | `wt rm [slug] [-y]` | `pre_rm` hooks, worktree removal, `post_rm` hooks |
 | `wt gc [--apply] [--forget slug] [slug…]` | cleans up after worktrees removed without `wt rm` (dry run by default, see [docs/gc.md](docs/gc.md)) |
 | `wt shell [slug]` | opens a shell at the worktree root |
 | `wt cd [slug]` | changes directory to the worktree (needs `wt shell-init`) |
 | `wt shell-init <bash\|zsh\|fish>` | the shell function `wt cd` needs |
 | `wt ide [slug] [editor]` | opens the worktree in an editor |
-| `wt open [slug] [target] [--list]` | opens an address in the browser (WSL included) |
+| `wt open [slug] [target] [--list [--json]]` | opens an address in the browser (WSL included) |
 | `wt run [task] [slug] [args…]` | runs a `wt.toml` task |
-| `wt tasks` / `wt root` / `wt path [slug]` | introspection |
+| `wt tasks` / `wt root` / `wt path [slug]` | introspection (`tasks` and `root` take `--json`) |
 | `wt completions <shell>` | completion script (slugs, tasks and branches included) |
 
 `wt` works from the main repository **and from inside a worktree**: the configuration is
@@ -206,6 +206,28 @@ makes its worktrees ready to use as soon as they exist.
 - `wt rm` removes the adopted checkout as well as the link. When the tool deletes the
   checkout itself, the link is left dangling and `wt gc` treats the entry as an orphan:
   removal hooks, then the link and the state go (see [docs/gc.md](docs/gc.md)).
+
+### Machine-readable output (`--json`)
+
+A tool driving `wt` from outside — an agent interface, an editor, a script — should not
+parse aligned, colored, translated text. `wt ls`, `wt show`, `wt open --list`, `wt root`
+and `wt tasks` take `--json`:
+
+| Command | Output |
+|---|---|
+| `wt ls --json` | `[{slug, dir, checkout, adopted, branch, up, ports, opts, url}]` |
+| `wt show <slug> --json` | the same object, plus `commit`, `info` (`[status.info]` probes), `changes` (`git status --short` lines) and `links` |
+| `wt open <slug> --list --json` | `[{url, label}]`; an empty list rather than an error when there is nothing to open |
+| `wt root --json` | `{name, config, main, root, has_up, has_down, has_status, has_ports, has_open, tasks}` |
+| `wt tasks --json` | `[{name, description, interactive}]` |
+
+`checkout` is where the files really are — the adopted path for an adopted worktree,
+`dir` otherwise; `up` is `null` when the project declares no `[status] up`. The output does
+not depend on `WT_LANG`, and fields are only ever added, never renamed or removed.
+
+`integrations/paseo/` uses it: a [Paseo](https://paseo.sh) plugin that adopts the
+worktrees Paseo creates, shows their addresses, ports and tasks in the workspace, and runs
+`wt gc` once Paseo has deleted an archived one.
 
 ### Getting into a worktree
 

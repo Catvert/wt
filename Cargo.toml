@@ -40,6 +40,8 @@ ratatui = { version = "0.30", default-features = false, optional = true, feature
 ] }
 rust-i18n = "4"
 serde = { version = "1", features = ["derive"] }
+# `--json` on the read-only commands, for tools driving wt from outside (src/json.rs).
+serde_json = "1"
 # The default interface is a focused, fzf-style workflow.  We embed skim instead of
 # shelling out to `fzf`/`sk`, so installing wt still produces one self-contained binary.
 # CLI, image preview and IPC support are deliberately left out: the library picker is
@@ -53,4 +55,5 @@ lto = true
 
 [dev-dependencies]
 assert_cmd = "2"
+serde_json = "1"
 tempfile = "3"

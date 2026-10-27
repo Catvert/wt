@@ -16,7 +16,7 @@ extern crate rust_i18n;
 // `i18n::init()` de la bibliothèque qui la choisit, pour les deux.
 rust_i18n::i18n!("locales", fallback = "en");
 
-use wt::{complete, config, git, i18n, ops, skim_ui, ui};
+use wt::{complete, config, git, i18n, json, ops, skim_ui, ui};
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -94,7 +94,11 @@ enum Cmd {
         slug: Option<String>,
     },
     /// Lists the worktrees and their state.
-    Ls,
+    Ls {
+        /// Machine-readable output (stable fields, independent of WT_LANG).
+        #[arg(long)]
+        json: bool,
+    },
     /// Opens the persistent Ratatui dashboard — what `wt` alone does.
     Tui,
     /// Opens the one-shot Skim interface: a worktree, then an action.
@@ -103,6 +107,9 @@ enum Cmd {
     Show {
         #[arg(add = complete::slugs())]
         slug: Option<String>,
+        /// Machine-readable output (stable fields, independent of WT_LANG).
+        #[arg(long)]
+        json: bool,
     },
     /// Removes a worktree (pre_rm/post_rm hooks). The branch is kept.
     Rm {
@@ -164,6 +171,9 @@ enum Cmd {
         /// List the available addresses instead of opening one.
         #[arg(long, short)]
         list: bool,
+        /// With --list: machine-readable output.
+        #[arg(long, requires = "list")]
+        json: bool,
     },
     /// Runs a wt.toml task on a worktree.
     Run {
@@ -176,14 +186,22 @@ enum Cmd {
         args: Vec<String>,
     },
     /// Lists the tasks declared in wt.toml.
-    Tasks,
+    Tasks {
+        /// Machine-readable output (stable fields, independent of WT_LANG).
+        #[arg(long)]
+        json: bool,
+    },
     /// Prints a worktree's path (`cd "$(wt path demo)"`).
     Path {
         #[arg(add = complete::slugs())]
         slug: Option<String>,
     },
     /// Prints the worktree root and the wt.toml in use.
-    Root,
+    Root {
+        /// Machine-readable output, with what the wt.toml declares and its tasks (stable fields, independent of WT_LANG).
+        #[arg(long)]
+        json: bool,
+    },
     /// Writes the shell completion script to stdout.
     ///
     /// `wt completions zsh > ~/.zfunc/_wt`. It completes slugs, tasks and branches by
@@ -267,16 +285,25 @@ fn try_main() -> Result<()> {
             let slug = selected_slug(&app, slug)?;
             app.cmd_down(&slug)
         }
-        Some(Cmd::Ls) => app.cmd_ls(),
+        Some(Cmd::Ls { json: true }) => json::print(
+            &app.list()
+                .iter()
+                .map(|w| json::worktree(&app, w))
+                .collect::<Vec<_>>(),
+        ),
+        Some(Cmd::Ls { json: false }) => app.cmd_ls(),
         Some(Cmd::Tui) => ui::run(Arc::clone(&app)),
         Some(Cmd::Pick) => skim_ui::run(&app),
-        Some(Cmd::Show { slug }) => {
+        Some(Cmd::Show { slug, json }) => {
             let slug = selected_slug(&app, slug)?;
             let wt = app
                 .list()
                 .into_iter()
                 .find(|w| w.slug == slug)
                 .with_context(|| t!("err.unknown_worktree", slug = slug).to_string())?;
+            if json {
+                return json::print(&json::detail(&app, &wt));
+            }
             for line in app.preview(&wt) {
                 println!("{line}");
             }
@@ -309,7 +336,21 @@ fn try_main() -> Result<()> {
             let slug = selected_slug(&app, slug)?;
             app.cmd_ide(&slug, editor.as_deref())
         }
-        Some(Cmd::Open { slug, target, list }) => {
+        Some(Cmd::Open {
+            slug, json: true, ..
+        }) => {
+            let slug = selected_slug(&app, slug)?;
+            let wt = app
+                .list()
+                .into_iter()
+                .find(|w| w.slug == slug)
+                .with_context(|| t!("err.unknown_worktree", slug = slug).to_string())?;
+            // No address is an empty list here, not an error: the consumer decides.
+            json::print(&json::links(&app, &wt))
+        }
+        Some(Cmd::Open {
+            slug, target, list, ..
+        }) => {
             let slug = selected_slug(&app, slug)?;
             app.cmd_open(&slug, target.as_deref(), list)
         }
@@ -318,13 +359,15 @@ fn try_main() -> Result<()> {
             let slug = selected_slug(&app, slug)?;
             app.cmd_run(&task, &slug, &args)
         }
-        Some(Cmd::Tasks) => app.cmd_tasks(),
+        Some(Cmd::Tasks { json: true }) => json::print(&json::tasks(&app)),
+        Some(Cmd::Tasks { json: false }) => app.cmd_tasks(),
         Some(Cmd::Path { slug }) => {
             let slug = selected_slug(&app, slug)?;
             println!("{}", app.dir(&slug).display());
             Ok(())
         }
-        Some(Cmd::Root) => {
+        Some(Cmd::Root { json: true }) => json::print(&json::project(&app)),
+        Some(Cmd::Root { json: false }) => {
             println!(
                 "{:<10}: {}",
                 t!("label.config"),
