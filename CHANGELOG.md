@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-10-27
+
 ### Added
 
 - `--json` on `wt ls`, `wt show`, `wt open --list`, `wt root` and `wt tasks`: stable fields,
