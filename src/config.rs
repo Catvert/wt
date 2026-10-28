@@ -413,7 +413,9 @@ impl Project {
         })
     }
 
-    /// Worktree root: absolute path, template resolved.
+    /// Worktree root: absolute path, template resolved. The wt.toml's `root` wins, then
+    /// `WT_ROOT` (same template, for a machine that wants every project's root elsewhere
+    /// without touching shared wt.toml files), then `{{main}}/../{{repo}}-wt`.
     pub fn root(&self) -> Result<PathBuf> {
         let repo = self
             .main
@@ -427,6 +429,11 @@ impl Project {
             .config
             .root
             .clone()
+            .or_else(|| {
+                std::env::var("WT_ROOT")
+                    .ok()
+                    .filter(|r| !r.trim().is_empty())
+            })
             .unwrap_or_else(|| format!("{{{{main}}}}/../{repo}-wt"));
         let rendered = crate::tmpl::render(&tpl, &base);
         let path = PathBuf::from(&rendered);

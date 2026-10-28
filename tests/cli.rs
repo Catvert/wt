@@ -40,7 +40,10 @@ fn git(dir: &Path, args: &[&str]) {
 /// machine's locale.
 fn wt(dir: &Path) -> Command {
     let mut cmd = Command::cargo_bin("wt").expect("binary");
-    cmd.current_dir(dir).env("WT_LANG", "en");
+    // WT_ROOT from the machine running the tests would move every worktree root.
+    cmd.current_dir(dir)
+        .env("WT_LANG", "en")
+        .env_remove("WT_ROOT");
     cmd
 }
 
@@ -291,6 +294,65 @@ fn init_writes_a_usable_config() {
         .success());
     // The generated file must be readable back by wt itself.
     assert!(wt(dir.path()).arg("ls").output().unwrap().status.success());
+}
+
+#[test]
+fn wt_root_moves_the_default_root_but_not_an_explicit_one() {
+    const WT_ROOT: &str = "{{main}}/../worktrees/{{repo}}";
+    let root_of = |project: &TempDir| {
+        let out = wt(project.path())
+            .args(["root", "--json"])
+            .env("WT_ROOT", WT_ROOT)
+            .output()
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+        std::path::PathBuf::from(json["root"].as_str().expect("root"))
+    };
+
+    let default = project("");
+    let parent = default.path().parent().unwrap();
+    let expected = parent
+        .join("worktrees")
+        .join(default.path().file_name().unwrap());
+    assert_eq!(root_of(&default), expected);
+
+    // The worktree really goes there, and is found again to be removed.
+    let new = wt(default.path())
+        .args(["new", "demo"])
+        .env("WT_ROOT", WT_ROOT)
+        .output()
+        .unwrap();
+    assert!(
+        new.status.success(),
+        "{}",
+        String::from_utf8_lossy(&new.stderr)
+    );
+    assert!(expected.join("demo").join("file.txt").exists());
+    let rm = wt(default.path())
+        .args(["rm", "demo", "-y"])
+        .env("WT_ROOT", WT_ROOT)
+        .output()
+        .unwrap();
+    assert!(
+        rm.status.success(),
+        "{}",
+        String::from_utf8_lossy(&rm.stderr)
+    );
+    assert!(!expected.join("demo").exists());
+    let _ = fs::remove_dir_all(&expected);
+    // Shared with other tests running in parallel: only if empty.
+    let _ = fs::remove_dir(parent.join("worktrees"));
+
+    let explicit = project("root = \"{{main}}/../{{repo}}-mine\"\n");
+    let repo = explicit.path().file_name().unwrap().to_string_lossy();
+    assert_eq!(
+        root_of(&explicit),
+        explicit
+            .path()
+            .parent()
+            .unwrap()
+            .join(format!("{repo}-mine"))
+    );
 }
 
 #[test]

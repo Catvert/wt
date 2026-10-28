@@ -376,7 +376,7 @@ référence — un projet sans serveur laisse simplement `[ports]`, `[status]` e
 de côté.
 
 ```toml
-root   = "{{main}}/../{{repo}}-wt"   # défaut
+root   = "{{main}}/../{{repo}}-wt"   # défaut (sinon WT_ROOT de l'environnement)
 branch = "wt/{{slug}}"               # défaut
 
 [vars]
@@ -573,6 +573,7 @@ raccourci est `o`.
 |---|---|
 | `WT_LANG` | langue de l'interface (`en`, `fr`) ; sinon `LC_ALL`/`LC_MESSAGES`/`LANG`, puis l'anglais |
 | `WT_CONFIG` | chemin d'un `wt.toml` alternatif |
+| `WT_ROOT` | racine des worktrees des projets dont le `wt.toml` n'en fixe pas (même modèle, par ex. `{{main}}/../worktrees/{{repo}}` ; défaut `{{main}}/../{{repo}}-wt`) |
 | `WT_IDE` | éditeur prioritaire (commande ou chemin absolu, `.exe` Windows compris) |
 | `WT_TERMINAL` | shell ouvert dans le worktree (défaut `$SHELL`) |
 | `WT_SHELL` | shell des hooks (défaut `sh`) |

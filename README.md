@@ -360,7 +360,7 @@ Every section is optional. This one shows everything at once, as a reference —
 without a server simply leaves `[ports]`, `[status]` and `[open]` out.
 
 ```toml
-root   = "{{main}}/../{{repo}}-wt"   # default
+root   = "{{main}}/../{{repo}}-wt"   # default (WT_ROOT from the environment otherwise)
 branch = "wt/{{slug}}"               # default
 
 [vars]
@@ -553,6 +553,7 @@ address and offers a picker as soon as there are several. In `wt tui`, its short
 |---|---|
 | `WT_LANG` | interface language (`en`, `fr`); otherwise `LC_ALL`/`LC_MESSAGES`/`LANG`, then English |
 | `WT_CONFIG` | path to an alternative `wt.toml` |
+| `WT_ROOT` | worktree root for projects whose `wt.toml` sets none (same template, e.g. `{{main}}/../worktrees/{{repo}}`; default `{{main}}/../{{repo}}-wt`) |
 | `WT_IDE` | preferred editor (command or absolute path, Windows `.exe` included) |
 | `WT_TERMINAL` | shell opened in the worktree (default `$SHELL`) |
 | `WT_SHELL` | shell running the hooks (default `sh`) |

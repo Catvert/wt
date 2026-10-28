@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `WT_ROOT`: the worktree root for projects whose `wt.toml` sets no `root`, with the same
+  template (`{{main}}`, `{{repo}}`). A machine can gather every project's worktrees elsewhere
+  without touching shared `wt.toml` files; an explicit `root` still wins.
+
 ### Fixed
 
 - Paseo plugin: worktrees created under a custom `worktrees.root` (Paseo's `config.json`)
