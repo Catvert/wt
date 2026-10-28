@@ -1,10 +1,10 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { openExternalUrl, usePaseo, useRpc } from "@getpaseo/plugin/client";
+import { openExternalUrl, usePaseo, useRpc, type PluginButtonIconProps } from "@getpaseo/plugin/client";
 import { useToast } from "@getpaseo/plugin/client/ui";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useMemo, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
-import { addresses, wtAdopt, type WtInfo } from "../shared/wt";
+import { addresses, startTask, wtAdopt, type WtInfo } from "../shared/wt";
 import { useWtInfo } from "./use-wt-info";
 
 type Props = {
@@ -20,8 +20,19 @@ type Props = {
 };
 
 export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone, onDetails }: Props) {
-  const { directory, data, isLoading, error, refetch } = useWtInfo(workspaceId, true);
+  // Après « Démarrer », on regarde plus souvent jusqu'à ce que le projet réponde.
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const { directory, data, isLoading, error, refetch } = useWtInfo(workspaceId, true, startedAt !== null);
   const paseo = usePaseo();
+  // Les terminaux que le plugin a ouverts dans ce workspace : « wt run dev » se reconnaît à son nom.
+  const terminals = useQuery({
+    queryKey: ["wt-terminals", workspaceId],
+    queryFn: async () => (await paseo.workspaces.ref(workspaceId).terminals.list()).entries,
+    refetchInterval: 5000,
+  });
+  useEffect(() => {
+    if (startedAt !== null && (data?.running || Date.now() - startedAt > 90_000)) setStartedAt(null);
+  }, [data?.running, startedAt]);
   const toast = useToast();
   const queryClient = useQueryClient();
   const adoptRpc = useRpc(wtAdopt);
@@ -55,14 +66,18 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
   const detail = data.detail;
 
   // Dans un terminal Paseo : les [[prompt]] de wt ont un vrai pty, et la sortie reste visible.
-  const inTerminal = async (name: string, args: string[]) => {
+  const inTerminal = async (name: string, args: string[], close = true) => {
     await paseo.workspaces.ref(workspaceId).terminals.create({
       name,
       command: "wt",
       args: ["-C", project.main, ...args],
     });
-    onDone?.();
+    void terminals.refetch();
+    if (close) onDone?.();
   };
+  const start = startTask(project);
+  const startTerminal = start ? terminals.data?.find((t) => t.name === `wt run ${start.name}`) : undefined;
+  const reachable = (url: string) => data.reachable[url];
   const open = (url: string, inPaseo: boolean) => {
     if (inPaseo && openBrowser) openBrowser({ url, workspaceId });
     else void openExternalUrl(url);
@@ -72,17 +87,56 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
   return (
     <View style={s.root}>
       <View style={s.row}>
-        <Text style={s.title}>{w.slug}</Text>
-        {w.up !== null ? <State s={s} theme={theme} up={w.up} /> : null}
+        <Text style={[s.title, { flex: 1 }]} numberOfLines={1}>{w.slug}</Text>
+        {startedAt !== null ? <Text style={s.muted}>démarrage…</Text> : <State s={s} theme={theme} running={data.running} />}
       </View>
       <Text style={s.muted} numberOfLines={1}>{w.branch}</Text>
+
+      <View style={[s.row, { flexWrap: "wrap" }]}>
+        {project.has_up && !data.running ? (
+          <Button s={s} primary onPress={() => void inTerminal("wt up", ["up", w.slug])}>▶ Démarrer (wt up)</Button>
+        ) : null}
+        {project.has_down && data.running ? (
+          <Button s={s} onPress={() => void inTerminal("wt down", ["down", w.slug])}>■ Arrêter (wt down)</Button>
+        ) : null}
+        {start && startTerminal ? (
+          <Button s={s} onPress={() => void paseo.terminals.ref(startTerminal.id).kill().then(() => terminals.refetch())}>
+            ■ Arrêter {start.name}
+          </Button>
+        ) : null}
+        {start && !startTerminal && !data.running ? (
+          <Button
+            s={s}
+            primary
+            disabled={startedAt !== null}
+            onPress={() => {
+              setStartedAt(Date.now());
+              void inTerminal(`wt run ${start.name}`, ["run", start.name, w.slug], false);
+            }}
+          >
+            {startedAt !== null ? "Démarrage…" : `▶ Démarrer (wt run ${start.name})`}
+          </Button>
+        ) : null}
+      </View>
+      {start && !startTerminal && data.running ? (
+        <Text style={s.muted}>Lancé hors du plugin (script Paseo ou terminal) : arrêtez-le là-bas.</Text>
+      ) : null}
+      {!project.has_up && !start && data.running === false ? (
+        <Text style={s.muted}>Rien n'écoute sur ses ports, et le wt.toml ne dit pas comment le démarrer.</Text>
+      ) : null}
 
       <Section s={s} title="Adresses">
         {addresses(data).map((a) => (
           <View key={a.url} style={s.address}>
+            <Dot theme={theme} on={reachable(a.url)} />
             <Pressable accessibilityRole="link" accessibilityLabel={`Ouvrir ${a.label}`} style={{ flex: 1 }} onPress={() => open(a.url, true)}>
-              <Text style={s.value}>{a.label}</Text>
-              <Text style={s.url} numberOfLines={1}>{a.url}</Text>
+              <Text style={s.value}>
+                {a.label}
+                {reachable(a.url) === false ? <Text style={s.muted}> · ne répond pas</Text> : null}
+              </Text>
+              <Text style={[s.url, reachable(a.url) === false && { color: theme.colors.foregroundMuted }]} numberOfLines={1}>
+                {a.url}
+              </Text>
             </Pressable>
             {openBrowser ? (
               <Pressable accessibilityRole="link" accessibilityLabel="Navigateur externe" onPress={() => open(a.url, false)}>
@@ -122,12 +176,6 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
       ) : null}
 
       <View style={[s.row, { marginTop: 8, flexWrap: "wrap" }]}>
-        {project.has_up && !w.up ? (
-          <Button s={s} primary onPress={() => void inTerminal("wt up", ["up", w.slug])}>wt up</Button>
-        ) : null}
-        {project.has_down && w.up !== false ? (
-          <Button s={s} onPress={() => void inTerminal("wt down", ["down", w.slug])}>wt down</Button>
-        ) : null}
         <Button s={s} onPress={() => void refetch()}>Actualiser</Button>
         {onDetails ? <Button s={s} onPress={onDetails}>Panneau</Button> : null}
       </View>
@@ -161,8 +209,45 @@ function Pairs({ s, title, values }: { s: S; title: string; values: Record<strin
   );
 }
 
-function State({ s, theme, up }: { s: S; theme: PluginTheme; up: boolean }) {
-  return <Text style={[s.badge, { color: up ? theme.colors.statusSuccess : theme.colors.foregroundMuted }]}>{up ? "démarré" : "arrêté"}</Text>;
+function State({ s, theme, running }: { s: S; theme: PluginTheme; running: boolean | null }) {
+  if (running === null) return null;
+  return (
+    <View style={s.row}>
+      <Dot theme={theme} on={running} />
+      <Text style={[s.badge, { color: running ? theme.colors.statusSuccess : theme.colors.foregroundMuted }]}>
+        {running ? "en ligne" : "arrêté"}
+      </Text>
+    </View>
+  );
+}
+
+/** Pastille d'état : pleine et verte si ça répond, creuse sinon, absente si on ne sait pas. */
+function Dot({ theme, on, size = 8 }: { theme: PluginTheme; on: boolean | null | undefined; size?: number }) {
+  if (on === undefined || on === null) return null;
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        borderWidth: 1.5,
+        borderColor: on ? theme.colors.statusSuccess : theme.colors.foregroundMuted,
+        backgroundColor: on ? theme.colors.statusSuccess : "transparent",
+      }}
+    />
+  );
+}
+
+/** Icône du bouton d'en-tête selon l'état du worktree. */
+export function headerIcon(running: boolean | null) {
+  return function WtStateIcon({ size, color, theme }: PluginButtonIconProps) {
+    if (running === null) return <Text style={{ color, fontSize: size * 0.8 }}>⑂</Text>;
+    return (
+      <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
+        <Dot theme={theme} on={running} size={Math.round(size * 0.55)} />
+      </View>
+    );
+  };
 }
 
 function Button({ s, primary, disabled, onPress, children }: { s: S; primary?: boolean; disabled?: boolean; onPress(): void; children: ReactNode }) {

@@ -7,7 +7,7 @@ import type {
 import { openExternalUrl } from "@getpaseo/plugin/client";
 import { ScrollView } from "@getpaseo/plugin/client/ui";
 import { addresses, wtInfo } from "./shared/wt";
-import { headerLabel, WtView } from "./client/wt-view";
+import { headerIcon, headerLabel, WtView } from "./client/wt-view";
 
 function WtPanel({ workspaceId, theme, layout, navigation }: PluginWorkspacePanelProps) {
   return (
@@ -56,7 +56,13 @@ export default function contribute(client: PluginClientContext) {
   });
 
   // Un bouton « wt » dans l'en-tête de chaque workspace qui relève d'un projet wt.
-  type Entry = { button: PluginButtonRegistration; directory: string; settled: boolean };
+  type Entry = {
+    button: PluginButtonRegistration;
+    directory: string;
+    settled: boolean;
+    shown: boolean;
+    running: boolean | null;
+  };
   const entries = new Map<string, Entry>();
   let stopped = false;
 
@@ -64,6 +70,11 @@ export default function contribute(client: PluginClientContext) {
     void client.rpc(wtInfo, { directory: entry.directory, detail: false }).then((info) => {
       const visible = info.kind === "worktree" || info.kind === "adopting" || info.kind === "unmanaged";
       entry.settled = info.kind !== "adopting" && info.kind !== "unmanaged";
+      if (entry.running !== info.running || !entry.shown) {
+        entry.running = info.running;
+        entry.button.update({ icon: headerIcon(info.running) });
+      }
+      entry.shown = true;
       entry.button.update({ visible, label: headerLabel(info) });
     });
   };
@@ -88,6 +99,8 @@ export default function contribute(client: PluginClientContext) {
     const entry: Entry = {
       directory,
       settled: false,
+      shown: false,
+      running: null,
       button: client.addHeaderButton({
         id: "wt",
         workspaceId,
@@ -102,9 +115,12 @@ export default function contribute(client: PluginClientContext) {
     entries.delete(workspaceId);
   };
 
-  // L'adoption se termine sans mise à jour du workspace : on repasse sur ceux qui attendent.
+  // L'adoption se termine et le serveur de dev démarre sans mise à jour du workspace :
+  // on repasse vite sur ceux qui attendent, et toutes les 15 s sur les autres.
+  let tick = 0;
   const timer = setInterval(() => {
-    for (const entry of entries.values()) if (!entry.settled) refresh(entry);
+    tick++;
+    for (const entry of entries.values()) if (!entry.settled || tick % 3 === 0) refresh(entry);
   }, 5000);
 
   let release: (() => Promise<void>) | null = null;

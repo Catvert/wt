@@ -56,6 +56,11 @@ export const wtInfoSchema = z.object({
   detail: detailSchema.nullable(),
   // Adresse du proxy des worktrees quand la machine en a un (wt-proxy-url, sur le VPS).
   proxyUrl: z.string().nullable(),
+  // Le worktree tourne-t-il ? `[status] up` quand le projet en a un, sinon un de ses ports
+  // écoute. null : ni l'un ni l'autre, rien à en dire.
+  running: z.boolean().nullable(),
+  // Avec detail : chaque adresse répond-elle (par URL) ?
+  reachable: z.record(z.string(), z.boolean()),
   error: z.string().nullable(),
 });
 export type WtInfo = z.infer<typeof wtInfoSchema>;
@@ -72,6 +77,15 @@ export const wtAdopt = defineRpc({
   input: z.object({ directory: z.string() }),
   output: z.object({ ok: z.boolean(), output: z.string() }),
 });
+
+/**
+ * La tâche qui démarre le projet quand le wt.toml n'a pas de hook `up` : un serveur de dev
+ * lancé par `wt run dev`, par exemple.
+ */
+export function startTask(project: WtProject) {
+  if (project.has_up) return null;
+  return project.tasks.find((t) => ["dev", "start", "serve"].includes(t.name)) ?? null;
+}
 
 /** Les adresses à proposer : le proxy, puis celles de wt, sinon une par port. */
 export function addresses(info: WtInfo): WtLink[] {
