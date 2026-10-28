@@ -28,6 +28,7 @@ its ports, copies, dependencies and hooks, and knows its addresses.
 
 ## Limits
 
-Adoption and cleanup only concern worktrees Paseo created under its own home
-(`$PASEO_HOME/worktrees`). If Paseo leaves files behind when deleting a worktree, `wt gc`
-is not run and the plugin log says so.
+Adoption and cleanup only concern worktrees Paseo created under its worktrees root:
+`worktrees.root` of its `config.json` when set, `$PASEO_HOME/worktrees` otherwise. Like the
+daemon, the plugin reads it at startup. If Paseo leaves files behind when deleting a
+worktree, `wt gc` is not run and the plugin log says so.

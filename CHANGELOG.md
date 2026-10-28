@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Paseo plugin: worktrees created under a custom `worktrees.root` (Paseo's `config.json`)
+  were neither adopted nor cleaned up after archiving; only `$PASEO_HOME/worktrees` was
+  recognised.
+
 ## [0.10.0] — 2026-10-27
 
 ### Added

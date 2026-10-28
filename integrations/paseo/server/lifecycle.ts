@@ -1,11 +1,34 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, sep } from "node:path";
+import { basename, isAbsolute, join, resolve, sep } from "node:path";
 import { adopting, findWorktree, real, run, wt } from "./wt";
+
+const expandTilde = (path: string) => {
+  const home = process.env.HOME || homedir();
+  return path === "~" ? home : path.startsWith("~/") ? home + path.slice(1) : path;
+};
+
+/**
+ * Où Paseo range ses worktrees, selon les règles de son démon : `worktrees.root` de
+ * `$PASEO_HOME/config.json` (absolu, en `~/`, ou relatif à PASEO_HOME), par défaut
+ * `$PASEO_HOME/worktrees`. Lu une fois, comme le démon, qui ne le prend qu'à son démarrage.
+ */
+function paseoWorktreesRoot() {
+  const paseoHome = resolve(expandTilde(process.env.PASEO_HOME ?? "~/.paseo"));
+  let configured: unknown;
+  try {
+    configured = JSON.parse(readFileSync(join(paseoHome, "config.json"), "utf8"))?.worktrees?.root;
+  } catch {
+    // Pas de config.json lisible : le défaut du démon.
+  }
+  const root = typeof configured === "string" ? expandTilde(configured.trim()) : "";
+  if (!root) return join(paseoHome, "worktrees");
+  return isAbsolute(root) ? resolve(root) : resolve(paseoHome, root);
+}
 
 // Le plugin ne touche qu'aux worktrees que Paseo a créés lui-même : un dossier local
 // ouvert dans Paseo, ou un checkout d'un autre outil, reste à son propriétaire.
-const paseoWorktrees = join(process.env.PASEO_HOME ?? join(homedir(), ".paseo"), "worktrees") + sep;
+const paseoWorktrees = paseoWorktreesRoot() + sep;
 
 const log = (msg: string) => console.log(`[wt] ${msg}`);
 
