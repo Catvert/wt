@@ -89,6 +89,8 @@ pub struct WorktreeDetailJson {
 pub struct LinkJson {
     pub url: String,
     pub label: String,
+    /// A tool of the worktree (third column of `[open] source`), not an address.
+    pub icon: Option<String>,
 }
 
 pub fn project(app: &App) -> ProjectJson {
@@ -185,6 +187,7 @@ pub fn links(app: &App, wt: &Worktree) -> Vec<LinkJson> {
         .map(|l| LinkJson {
             url: l.url,
             label: l.label,
+            icon: l.icon,
         })
         .collect()
 }

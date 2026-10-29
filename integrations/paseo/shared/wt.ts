@@ -2,7 +2,9 @@ import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 
 // Les formes de `wt … --json` (src/json.rs dans wt) : des champs ajoutés, jamais renommés.
-export const linkSchema = z.object({ url: z.string(), label: z.string() });
+// icon : un outil du worktree (base de données, mails…), pas une adresse de l'application ;
+// wt ≥ 0.11, absent avant.
+export const linkSchema = z.object({ url: z.string(), label: z.string(), icon: z.string().nullable().default(null) });
 
 export const taskSchema = z.object({
   name: z.string(),
@@ -106,15 +108,21 @@ export function startTask(project: WtProject) {
 /** Les adresses à proposer : le proxy, puis celles de wt, sinon une par port. */
 export function addresses(info: WtInfo): WtLink[] {
   const out: WtLink[] = [];
-  if (info.proxyUrl) out.push({ url: info.proxyUrl, label: "proxy" });
-  const links = info.detail?.links ?? (info.worktree?.url ? [{ url: info.worktree.url, label: "application" }] : []);
+  if (info.proxyUrl) out.push({ url: info.proxyUrl, label: "proxy", icon: null });
+  const links = info.detail?.links.filter((l) => !l.icon) ??
+    (info.worktree?.url ? [{ url: info.worktree.url, label: "application", icon: null }] : []);
   out.push(...links.filter((l) => !out.some((o) => o.url === l.url)));
   if (out.length === 0 && info.worktree) {
     for (const [name, port] of Object.entries(info.worktree.ports)) {
-      out.push({ url: `http://localhost:${port}`, label: name });
+      out.push({ url: `http://localhost:${port}`, label: name, icon: null });
     }
   }
   return out;
+}
+
+/** Les outils du worktree : les liens de `[open] source` qui portent une icône. */
+export function tools(info: WtInfo): WtLink[] {
+  return info.detail?.links.filter((l) => l.icon) ?? [];
 }
 
 /**

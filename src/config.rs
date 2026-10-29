@@ -339,7 +339,9 @@ pub struct Open {
     pub label: Option<String>,
     /// Extra links computed on demand: a shell command writing one line per link,
     /// `url<TAB>label`. This is what allows one address per tenant, per service or per
-    /// environment — the binary does not need to know what those are.
+    /// environment — the binary does not need to know what those are. An optional third
+    /// column, `url<TAB>label<TAB>icon`, marks a tool of the worktree (database admin, mail
+    /// catcher…) rather than an address: the Paseo plugin shows it as a button.
     pub source: Option<String>,
 }
 

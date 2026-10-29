@@ -20,6 +20,12 @@ its ports, copies, dependencies and hooks, and knows its addresses.
   answers or the `wt.toml` default. Start passes them with `--set`; on a running worktree,
   changing one offers to apply it (`wt up` again). The other questions stay in the terminal. On desktop an
   address opens in a Paseo browser tab, the arrow next to it in the system browser.
+- **Tools.** The `[open] source` lines with a third column, an icon name
+  (`url<TAB>label<TAB>Database`), are the worktree's tools (database admin, mail catcher,
+  error tracker…): a row of buttons at the top of the popover and the panel, opening in a
+  Paseo browser tab. Paseo gives that tab only to panels: the popover borrows it from a `wt`
+  panel already shown on the same host (in a tab or the Explorer), and falls back to the
+  system browser until then.
 - **Terminals.** `wt up`, `wt down` and every task run in a Paseo terminal of the
   workspace, so `[[prompt]]` questions can be answered and the output stays visible.
 - **Cleanup.** When a workspace is archived, the plugin waits for Paseo to delete the
@@ -29,7 +35,8 @@ its ports, copies, dependencies and hooks, and knows its addresses.
 ## Setup
 
 `wt` 0.10 or later must be on the daemon's `PATH` (the plugin relies on `--json`); the
-start-up questions in the panel need the next release (`prompts` in `wt root --json`). Paseo
+start-up questions in the panel and the tools need the next release (`prompts` in
+`wt root --json`, `icon` in `links`). Paseo
 0.13.2 or later.
 
 ## Limits

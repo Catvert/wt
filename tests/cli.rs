@@ -607,7 +607,7 @@ allocate = "new"
 [open]
 url = "http://localhost:{{port.dev}}"
 label = "app"
-source = "printf 'http://admin.localhost\tadmin\n'"
+source = "printf 'http://admin.localhost\tadmin\nhttp://mail.localhost\tmails\tmail\n'"
 
 [status]
 up = "test -f .up"
@@ -664,6 +664,9 @@ source = "echo demo"
     assert_eq!(show["info"]["greeting"], "hi");
     assert_eq!(show["links"][0]["label"], "app");
     assert_eq!(show["links"][1]["url"], "http://admin.localhost");
+    assert_eq!(show["links"][1]["icon"], serde_json::Value::Null);
+    assert_eq!(show["links"][2]["label"], "mails");
+    assert_eq!(show["links"][2]["icon"], "mail");
     assert_eq!(show["changes"].as_array().unwrap().len(), 0);
 
     let links = json(&["open", "demo", "--list", "--json"]);

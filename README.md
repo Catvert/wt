@@ -392,7 +392,7 @@ size = "du -sh . | cut -f1"
 [open]
 url = "http://{{host}}"              # main address
 label = "application"                # its label in the picker
-source = "./scripts/urls.sh"         # extra addresses: url<TAB>label
+source = "./scripts/urls.sh"         # extra addresses: url<TAB>label[<TAB>icon]
 
 [editor]
 command = "phpstorm"                 # WT_IDE from the environment still wins

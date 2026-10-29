@@ -1,10 +1,10 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { openExternalUrl, usePaseo, useRpc, type PluginButtonIconProps } from "@getpaseo/plugin/client";
-import { useToast } from "@getpaseo/plugin/client/ui";
+import { Icon, useToast } from "@getpaseo/plugin/client/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
-import { addresses, startTask, toggleValues, upPrompts, wtAdopt, type WtInfo, type WtPrompt } from "../shared/wt";
+import { addresses, startTask, toggleValues, tools, upPrompts, wtAdopt, type WtInfo, type WtPrompt } from "../shared/wt";
 import { useWtInfo } from "./use-wt-info";
 
 type Props = {
@@ -13,7 +13,8 @@ type Props = {
   compact: boolean;
   // Le panneau en a besoin, le popover non : il reste court.
   full: boolean;
-  // Présent dans un panneau sur Electron : ouvre l'adresse dans un onglet navigateur de Paseo.
+  // Sur Electron : ouvre l'adresse dans un onglet navigateur de Paseo. Le panneau le reçoit de
+  // Paseo ; le popover, qui n'y a pas droit, reprend celui d'un panneau déjà ouvert.
   openBrowser?: (input: { url: string; workspaceId: string }) => void;
   onDone?: () => void;
   onDetails?: () => void;
@@ -94,8 +95,13 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
   const startTerminal = start ? terminals.data?.find((t) => t.name === `wt run ${start.name}`) : undefined;
   const reachable = (url: string) => data.reachable[url];
   const open = (url: string, inPaseo: boolean) => {
-    if (inPaseo && openBrowser) openBrowser({ url, workspaceId });
-    else void openExternalUrl(url);
+    if (inPaseo && openBrowser) {
+      try {
+        openBrowser({ url, workspaceId });
+      } catch {
+        void openExternalUrl(url);
+      }
+    } else void openExternalUrl(url);
     onDone?.();
   };
 
@@ -136,6 +142,22 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
           </Button>
         ) : null}
       </View>
+      {tools(data).length > 0 ? (
+        <View style={[s.row, { flexWrap: "wrap" }]}>
+          {tools(data).map((t) => (
+            <Pressable
+              key={t.url}
+              accessibilityRole="link"
+              accessibilityLabel={`Ouvrir ${t.label}`}
+              style={[s.tool, reachable(t.url) === false && { opacity: 0.5 }]}
+              onPress={() => open(t.url, true)}
+            >
+              <Icon name={t.icon as string} size={14} color={theme.colors.foreground} />
+              <Text style={s.value}>{t.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
       {start && !startTerminal && data.running ? (
         <Text style={s.muted}>Lancé hors du plugin (script Paseo ou terminal) : arrêtez-le là-bas.</Text>
       ) : null}
@@ -396,6 +418,10 @@ function styles(theme: PluginTheme, compact: boolean) {
     address: {
       flexDirection: "row" as const, alignItems: "center" as const, gap: 8,
       borderWidth: 1, borderColor: c.border, borderRadius: 8, padding: 8, backgroundColor: c.surface1,
+    },
+    tool: {
+      flexDirection: "row" as const, alignItems: "center" as const, gap: 6,
+      paddingVertical: 4, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1,
     },
     task: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8, paddingVertical: 4 },
     url: { color: c.accent, fontSize: 12 },

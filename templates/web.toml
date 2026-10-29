@@ -90,7 +90,9 @@ post_rm = []
 url = "http://{{host}}:{{port.web}}"
 # label = "application"
 # Extra addresses (one per tenant, per service…): a shell command writing one line per
-# link, `url<TAB>label`. Only run when opening.
+# link, `url<TAB>label`. Only run when opening. A third column, a Lucide icon name
+# (`url<TAB>label<TAB>Database`), marks a tool (database admin, mail catcher…): the Paseo
+# plugin shows it as a button.
 # source = "./scripts/wt-urls.sh"
 
 # [editor]

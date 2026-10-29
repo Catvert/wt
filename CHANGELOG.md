@@ -17,6 +17,11 @@ All notable changes to this project are documented here. The format follows
 - Paseo plugin: the panel and the header popover ask the `wt up` questions with fixed
   choices (checkboxes for `multi` and yes/no, pills otherwise), preset to the saved answers,
   and pass them to `wt up`; on a running worktree, a changed answer can be applied.
+- `[open] source` takes an optional third column, an icon name (`url<TAB>label<TAB>icon`):
+  the link is a tool of the worktree (database admin, mail catcher, error tracker…), listed
+  in `links` of `--json` with its `icon`.
+- Paseo plugin: those tools are buttons in the popover and the panel; they open in a Paseo
+  browser tab.
 
 ### Fixed
 

@@ -32,6 +32,9 @@ pub fn warn(msg: &str) {
 pub struct Link {
     pub url: String,
     pub label: String,
+    /// Third column of `[open] source`: a tool of the worktree (database, mail catcher…)
+    /// rather than an address of the application. A Lucide icon name, for the Paseo plugin.
+    pub icon: Option<String>,
 }
 
 pub struct App {
@@ -1026,6 +1029,7 @@ impl App {
                     .label
                     .clone()
                     .unwrap_or_else(|| "application".into()),
+                icon: None,
             });
         }
         if let Some(source) = &self.project.config.open.source {
@@ -1033,10 +1037,10 @@ impl App {
             let cwd = self.prompt_cwd(slug);
             let raw = util::capture(&tmpl::render(source, &vars), &cwd, &state::env(&vars));
             for line in raw.lines().filter(|l| !l.trim().is_empty()) {
-                let (url, label) = match line.split_once('\t') {
-                    Some((u, l)) => (u.trim(), l.trim()),
-                    None => (line.trim(), ""),
-                };
+                let mut cols = line.splitn(3, '\t').map(str::trim);
+                let url = cols.next().unwrap_or_default();
+                let label = cols.next().unwrap_or_default();
+                let icon = cols.next().filter(|i| !i.is_empty());
                 if url.is_empty() {
                     continue;
                 }
@@ -1047,6 +1051,7 @@ impl App {
                     } else {
                         label.to_string()
                     },
+                    icon: icon.map(str::to_string),
                 });
             }
         }

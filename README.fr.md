@@ -408,7 +408,7 @@ taille = "du -sh . | cut -f1"
 [open]
 url = "http://{{host}}"              # adresse principale
 label = "application"                # son libellé dans le sélecteur
-source = "./scripts/urls.sh"         # adresses supplémentaires : url<TAB>libellé
+source = "./scripts/urls.sh"         # adresses supplémentaires : url<TAB>libellé[<TAB>icône]
 
 [editor]
 command = "phpstorm"                 # WT_IDE de l'environnement reste prioritaire

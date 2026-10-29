@@ -5,6 +5,7 @@ import type { ZodType, output } from "zod";
 import {
   addresses,
   detailSchema,
+  tools,
   projectSchema,
   worktreeSchema,
   type WtInfo,
@@ -77,7 +78,7 @@ export async function getInfo({ directory, detail }: { directory: string; detail
   info.running =
     worktree.up ?? (ports.length > 0 ? (await Promise.all(ports.map(listening))).some(Boolean) : null);
   if (detail) {
-    const urls = addresses(info).map((a) => a.url);
+    const urls = [...addresses(info), ...tools(info)].map((a) => a.url);
     const answers = await Promise.all(urls.map(responds));
     info.reachable = Object.fromEntries(urls.map((u, i) => [u, answers[i]]));
   }

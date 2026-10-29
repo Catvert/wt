@@ -6,10 +6,20 @@ import type {
 } from "@getpaseo/plugin/client";
 import { openExternalUrl } from "@getpaseo/plugin/client";
 import { ScrollView } from "@getpaseo/plugin/client/ui";
+import { useEffect } from "react";
 import { addresses, wtInfo } from "./shared/wt";
 import { headerIcon, headerLabel, WtView } from "./client/wt-view";
 
-function WtPanel({ workspaceId, theme, layout, navigation }: PluginWorkspacePanelProps) {
+// openBrowser de chaque hôte, retenu du dernier panneau wt affiché : Paseo ne le donne pas aux
+// popovers des boutons d'en-tête. Sans lui, le popover ouvre le navigateur du système.
+type OpenBrowser = (input: { url: string; workspaceId: string }) => void;
+const browsers = new Map<string, OpenBrowser>();
+
+function WtPanel({ workspaceId, theme, layout, host, navigation }: PluginWorkspacePanelProps) {
+  const openBrowser = navigation?.openBrowser;
+  useEffect(() => {
+    if (openBrowser) browsers.set(host.id, openBrowser);
+  }, [host.id, openBrowser]);
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.colors.surface0 }}>
       <WtView
@@ -17,7 +27,7 @@ function WtPanel({ workspaceId, theme, layout, navigation }: PluginWorkspacePane
         theme={theme}
         compact={layout.compact}
         full
-        openBrowser={navigation?.openBrowser}
+        openBrowser={openBrowser}
       />
     </ScrollView>
   );
@@ -83,12 +93,13 @@ export default function contribute(client: PluginClientContext) {
     if (stopped || !directory) return;
     const existing = entries.get(workspaceId);
     if (existing) return refresh(existing);
-    const Content = ({ theme, layout, close }: PluginButtonContentProps) => (
+    const Content = ({ theme, layout, host, close }: PluginButtonContentProps) => (
       <WtView
         workspaceId={workspaceId}
         theme={theme}
         compact={layout.compact}
         full={false}
+        openBrowser={browsers.get(host.id)}
         onDone={close}
         onDetails={() => {
           close();
