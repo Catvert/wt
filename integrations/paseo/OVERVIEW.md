@@ -26,6 +26,10 @@ its ports, copies, dependencies and hooks, and knows its addresses.
   Paseo browser tab. Paseo gives that tab only to panels: the popover borrows it from a `wt`
   panel already shown on the same host (in a tab or the Explorer), and falls back to the
   system browser until then.
+- **Automatic stop.** Before a start, pills choose how long the worktree may run (1 h to
+  8 h, or never; preset to the daemon's `WT_STOP_AFTER`), passed as `wt up --stop-after`.
+  On a started worktree the panel shows the time left and the same pills keep it that much
+  longer from now (`wt keep`). A timer running `wt down --expired` does the stopping.
 - **Git.** Two more buttons in that row: **VS Code**, a web editor opened on the worktree when
   the daemon has `WT_WEB_EDITOR_URL` (`{path}` stands for the checkout, URL-encoded: for
   example openvscode-server's `https://code.example/?folder={path}`), and **lazygit** in a

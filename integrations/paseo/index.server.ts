@@ -1,10 +1,11 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { adopt, release } from "./server/lifecycle";
-import { getInfo } from "./server/wt";
-import { wtAdopt, wtInfo } from "./shared/wt";
+import { getInfo, keep } from "./server/wt";
+import { wtAdopt, wtInfo, wtKeep } from "./shared/wt";
 
 export default function contribute(server: PluginServerContext) {
   server.handle(wtInfo, getInfo);
+  server.handle(wtKeep, keep);
   server.handle(wtAdopt, ({ directory }) => adopt(directory, { automatic: false }));
 
   // Les hooks expirent après 30 s : l'adoption (npm ci…) et l'attente de la suppression

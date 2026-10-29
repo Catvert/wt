@@ -1,6 +1,8 @@
 _version: 1
 
 err:
+  bad_duration: "durée invalide « %{value} » (ex. 90m, 2h, 1h30m, 1d, never)"
+  expired_failed: "%{failed} worktree(s) échu(s) n'ont pas pu être arrêtés"
   adopt_not_worktree: "%{path} n'est pas un worktree git de ce dépôt"
   adopt_taken: "%{path} est déjà adopté sous '%{slug}'"
   git_missing: "git introuvable dans le PATH"
@@ -29,6 +31,7 @@ err:
   interactive_tty: "l'interface interactive a besoin d'un terminal (utilise une sous-commande dans un script)"
 
 label:
+  stop_at: "arrêt auto"
   url: "url"
   path: "chemin"
   branch: "branche"
@@ -43,6 +46,8 @@ label:
   root: "racine"
 
 ok:
+  keep: "worktree '%{slug}' : arrêt automatique dans %{left}"
+  keep_forever: "worktree '%{slug}' : sans arrêt automatique"
   adopted: "worktree '%{slug}' adopté : %{path}"
   created: "worktree '%{slug}' créé — %{path}"
   started: "worktree '%{slug}' démarré"
@@ -68,6 +73,9 @@ hint:
   no_shell_integration: "intégration shell absente — ajoute `eval \"$(wt shell-init %{shell})\"` à ton fichier rc, ou utilise `wt shell %{slug}`"
 
 info:
+  stops_in: "arrêt automatique dans %{left} (wt keep pour le changer)"
+  in: "dans %{left}"
+  expired: "worktree '%{slug}' : arrêt automatique échu"
   adopting: "adoption de %{path} (lien %{link})"
   copy_kept: "%{path} déjà présent, conservé"
   creating: "création du worktree (%{branch})"

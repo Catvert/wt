@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Automatic stop: `wt up --stop-after 8h` (default `WT_STOP_AFTER`) records a deadline,
+  `wt keep <slug> <duration|never>` moves it, and `wt down --expired`, run by a timer, stops
+  the worktrees past theirs. `stop_at` (Unix seconds) in `--json`; `wt down` clears it. A
+  started worktree nobody comes back to no longer runs, and holds memory, for weeks.
 - `WT_ROOT`: the worktree root for projects whose `wt.toml` sets no `root`, with the same
   template (`{{main}}`, `{{repo}}`). A machine can gather every project's worktrees elsewhere
   without touching shared `wt.toml` files; an explicit `root` still wins.
@@ -22,6 +26,8 @@ All notable changes to this project are documented here. The format follows
   in `links` of `--json` with its `icon`.
 - Paseo plugin: those tools are buttons in the popover and the panel; they open in a Paseo
   browser tab.
+- Paseo plugin: the popover and the panel choose the automatic stop of a start, show the
+  time left on a started worktree, and keep it longer (`wt keep`).
 - Paseo plugin: a **VS Code** button opens the worktree in a web editor (`WT_WEB_EDITOR_URL`
   on the daemon, `{path}` for the checkout), and a **lazygit** button runs lazygit on it in a
   Paseo terminal.

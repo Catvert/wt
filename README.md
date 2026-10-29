@@ -121,8 +121,10 @@ wt pick                 # fuzzy picker: worktree, then action
 | `wt init [--preset plain\|web] [--force]` | writes an example `wt.toml` |
 | `wt new <slug> [branch] [--from ref] [--set k=v]` | checkout + directories + copies + `post_new` hooks |
 | `wt new <slug> --adopt <path> [--set k=v]` | same, for a git worktree another tool already created (see below) |
-| `wt up [slug] [--set k=v]` | `up` hooks (and port allocation, if any) |
+| `wt up [slug] [--set k=v] [--stop-after 8h]` | `up` hooks (and port allocation, if any); `--stop-after` (default `WT_STOP_AFTER`) sets an automatic stop |
 | `wt down [slug]` | `down` hooks — the checkout and state are kept |
+| `wt down --expired` | stops every worktree whose automatic stop is due — for a timer (systemd, cron) |
+| `wt keep <slug> <2h\|never>` | moves the automatic stop: that long from now, or none |
 | `wt ls` / `wt show [slug]` | worktree state (`--json`: see below) |
 | `wt rm [slug] [-y]` | `pre_rm` hooks, worktree removal, `post_rm` hooks |
 | `wt gc [--apply] [--forget slug] [slug…]` | cleans up after worktrees removed without `wt rm` (dry run by default, see [docs/gc.md](docs/gc.md)) |
@@ -554,6 +556,7 @@ address and offers a picker as soon as there are several. In `wt tui`, its short
 | `WT_LANG` | interface language (`en`, `fr`); otherwise `LC_ALL`/`LC_MESSAGES`/`LANG`, then English |
 | `WT_CONFIG` | path to an alternative `wt.toml` |
 | `WT_ROOT` | worktree root for projects whose `wt.toml` sets none (same template, e.g. `{{main}}/../worktrees/{{repo}}`; default `{{main}}/../{{repo}}-wt`) |
+| `WT_STOP_AFTER` | default `wt up --stop-after` (`8h`, `90m`…): started worktrees stop on their own once `wt down --expired` runs past the deadline |
 | `WT_IDE` | preferred editor (command or absolute path, Windows `.exe` included) |
 | `WT_TERMINAL` | shell opened in the worktree (default `$SHELL`) |
 | `WT_SHELL` | shell running the hooks (default `sh`) |

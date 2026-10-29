@@ -50,6 +50,9 @@ export const worktreeSchema = z.object({
   ports: z.record(z.string(), z.number()),
   opts: z.record(z.string(), z.string()),
   url: z.string().nullable(),
+  // Échéance de l'arrêt automatique (wt down --expired), en secondes Unix ; null : aucune.
+  // Absent avant wt 0.11, qui ne connaît pas l'arrêt automatique.
+  stop_at: z.number().nullable().optional(),
 });
 
 export const detailSchema = worktreeSchema.extend({
@@ -83,6 +86,8 @@ export const wtInfoSchema = z.object({
   webEditor: z.string().nullable().default(null),
   // lazygit est-il sur le PATH du démon ?
   lazygit: z.boolean().default(false),
+  // La durée d'un démarrage sans autre choix (WT_STOP_AFTER du démon).
+  defaultStopAfter: z.string().nullable().default(null),
   error: z.string().nullable(),
 });
 export type WtInfo = z.infer<typeof wtInfoSchema>;
@@ -93,6 +98,28 @@ export const wtInfo = defineRpc({
   input: z.object({ directory: z.string(), detail: z.boolean().default(false) }),
   output: wtInfoSchema,
 });
+
+export const wtKeep = defineRpc({
+  name: "wt.keep",
+  // duration : 2h, 8h… ou never.
+  input: z.object({ main: z.string(), slug: z.string(), duration: z.string() }),
+  output: z.object({ ok: z.boolean(), output: z.string() }),
+});
+
+/** Les durées proposées pour l'arrêt automatique, celle par défaut comprise. */
+export function stopChoices(defaultStopAfter: string | null): { value: string; label: string }[] {
+  const out = ["1h", "2h", "4h", "8h"].map((v) => ({ value: v, label: v.replace("h", " h") }));
+  if (defaultStopAfter && defaultStopAfter !== "never" && !out.some((o) => o.value === defaultStopAfter)) {
+    out.push({ value: defaultStopAfter, label: defaultStopAfter });
+  }
+  return [...out, { value: "never", label: "jamais" }];
+}
+
+/** `2 h 05`, `40 min` : le temps qui reste avant une échéance. */
+export function formatLeft(seconds: number) {
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")}`;
+}
 
 export const wtAdopt = defineRpc({
   name: "wt.adopt",

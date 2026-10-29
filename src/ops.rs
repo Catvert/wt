@@ -557,10 +557,25 @@ impl App {
     // --------------------------------------------------------------------------------
 
     pub fn cmd_up(&self, slug: &str, sets: &[String]) -> Result<()> {
+        self.cmd_up_for(slug, sets, None)
+    }
+
+    /// `stop_after`: how long the worktree may run (`--stop-after`), otherwise
+    /// `WT_STOP_AFTER`, otherwise for as long as nobody stops it. Every start sets the
+    /// deadline again.
+    pub fn cmd_up_for(&self, slug: &str, sets: &[String], stop_after: Option<&str>) -> Result<()> {
         let mut st = self.require_existing(slug)?;
         // Given options add to the previous ones: a bare `wt up demo` repeats the last
         // start, and `--set queue=0` only resets that one key.
         st.opts.extend(parse_sets(sets)?);
+        let stop_after = match stop_after {
+            Some(d) => Some(d.to_string()),
+            None => std::env::var("WT_STOP_AFTER").ok(),
+        };
+        st.stop_at = match stop_after {
+            Some(d) => util::parse_duration(&d)?.map(|s| util::now() + s),
+            None => None,
+        };
         self.allocate_ports(slug, &mut st, Allocate::Up)?;
         state::save(&self.root, slug, &st)?;
 
@@ -582,6 +597,60 @@ impl App {
         )?;
         self.ok(t!("ok.started", slug = slug).to_string());
         self.print_endpoints(slug, &st);
+        if let Some(at) = st.stop_at {
+            let left = util::format_left(at.saturating_sub(util::now()));
+            self.out(format!("  {}", t!("info.stops_in", left = left)));
+        }
+        Ok(())
+    }
+
+    /// `wt keep <slug> <duration>`: the worktree may run that long from now; `never` lifts
+    /// the automatic stop.
+    pub fn cmd_keep(&self, slug: &str, duration: &str) -> Result<()> {
+        let mut st = self.require_existing(slug)?;
+        st.stop_at = util::parse_duration(duration)?.map(|s| util::now() + s);
+        state::save(&self.root, slug, &st)?;
+        match st.stop_at {
+            Some(at) => {
+                let left = util::format_left(at.saturating_sub(util::now()));
+                self.ok(t!("ok.keep", slug = slug, left = left).to_string());
+            }
+            None => self.ok(t!("ok.keep_forever", slug = slug).to_string()),
+        }
+        Ok(())
+    }
+
+    /// `wt down --expired`: stops every worktree whose deadline has passed. Meant for a
+    /// timer; one failure does not stop the others, and is reported at the end.
+    pub fn cmd_down_expired(&self) -> Result<()> {
+        let now = util::now();
+        let mut failed = 0;
+        for wt in self.list() {
+            if !wt.state.stop_at.is_some_and(|at| at <= now) {
+                continue;
+            }
+            self.out(t!("info.expired", slug = wt.slug).to_string());
+            // Already stopped by other means: only the deadline goes.
+            if self.is_up(&wt) == Some(false) {
+                self.clear_stop_at(&wt.slug)?;
+                continue;
+            }
+            if let Err(e) = self.cmd_down(&wt.slug) {
+                self.warn(format!("{}: {e:#}", wt.slug));
+                failed += 1;
+            }
+        }
+        if failed > 0 {
+            bail!("{}", t!("err.expired_failed", failed = failed));
+        }
+        Ok(())
+    }
+
+    fn clear_stop_at(&self, slug: &str) -> Result<()> {
+        let mut st = state::load(&self.root, slug);
+        if st.stop_at.take().is_some() {
+            state::save(&self.root, slug, &st)?;
+        }
         Ok(())
     }
 
@@ -595,7 +664,7 @@ impl App {
                 )
                 .to_string(),
             );
-            return Ok(());
+            return self.clear_stop_at(slug);
         }
         self.run_hook(
             "down",
@@ -604,6 +673,7 @@ impl App {
             &st,
             Cwd::Worktree,
         )?;
+        self.clear_stop_at(slug)?;
         let kept = if self.has_ports() {
             t!("label.kept_with_ports")
         } else {
@@ -1130,6 +1200,14 @@ impl App {
                 t!("state.stopped")
             };
             out.push(format!("{:<9}: {state}", t!("label.state")));
+        }
+        if let Some(at) = wt.state.stop_at {
+            let left = util::format_left(at.saturating_sub(util::now()));
+            out.push(format!(
+                "{:<9}: {}",
+                t!("label.stop_at"),
+                t!("info.in", left = left)
+            ));
         }
         for (name, port) in &wt.state.ports {
             out.push(format!("{name:<9}: {port}"));

@@ -295,9 +295,77 @@ pub fn which(bin: &str) -> Option<PathBuf> {
     })
 }
 
+/// Seconds since the Unix epoch.
+pub fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default()
+}
+
+/// A duration such as `90m`, `2h`, `1h30m`, `1d` or `45s`, in seconds; a bare number is
+/// minutes. `never`, `off`, `none` and `0` mean no duration at all: `None`.
+pub fn parse_duration(text: &str) -> Result<Option<u64>> {
+    let text = text.trim().to_lowercase();
+    if matches!(text.as_str(), "never" | "off" | "none" | "0" | "") {
+        return Ok(None);
+    }
+    let bad = || anyhow::anyhow!("{}", t!("err.bad_duration", value = text));
+    if let Ok(minutes) = text.parse::<u64>() {
+        return Ok(Some(minutes * 60));
+    }
+    let (mut total, mut number) = (0u64, String::new());
+    for c in text.chars() {
+        if c.is_ascii_digit() {
+            number.push(c);
+            continue;
+        }
+        let unit = match c {
+            's' => 1,
+            'm' => 60,
+            'h' => 3600,
+            'd' => 86400,
+            _ => return Err(bad()),
+        };
+        total += number.parse::<u64>().map_err(|_| bad())? * unit;
+        number.clear();
+    }
+    if !number.is_empty() || total == 0 {
+        return Err(bad());
+    }
+    Ok(Some(total))
+}
+
+/// `2 h 05`, `40 min`: what is left before a deadline, for people.
+pub fn format_left(seconds: u64) -> String {
+    let minutes = seconds.div_ceil(60);
+    if minutes < 60 {
+        format!("{minutes} min")
+    } else {
+        format!("{} h {:02}", minutes / 60, minutes % 60)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_durations() {
+        assert_eq!(parse_duration("90m").unwrap(), Some(5400));
+        assert_eq!(parse_duration("1h30m").unwrap(), Some(5400));
+        assert_eq!(parse_duration("2H").unwrap(), Some(7200));
+        assert_eq!(parse_duration("1d").unwrap(), Some(86400));
+        assert_eq!(parse_duration("45").unwrap(), Some(2700));
+        for none in ["never", "off", "0", " none "] {
+            assert_eq!(parse_duration(none).unwrap(), None);
+        }
+        for bad in ["2x", "h", "1h30", "-1h"] {
+            assert!(parse_duration(bad).is_err(), "{bad}");
+        }
+        assert_eq!(format_left(59), "1 min");
+        assert_eq!(format_left(7500), "2 h 05");
+    }
 
     #[test]
     fn normalises_parent_segments() {

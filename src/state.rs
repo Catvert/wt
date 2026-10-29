@@ -40,6 +40,11 @@ pub struct WtState {
     /// `<root>/<slug>` is then a link to it. Absent for a checkout `wt` created itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<PathBuf>,
+    /// When `wt down --expired` stops the worktree, in Unix seconds: set by `wt up` from
+    /// `--stop-after` or `WT_STOP_AFTER`, moved by `wt keep`, cleared by `wt down`. A
+    /// started worktree nobody comes back to does not run, and hold memory, for weeks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_at: Option<u64>,
 }
 
 /// Where the checkout of a worktree really is: the adopted path when `<root>/<slug>` is

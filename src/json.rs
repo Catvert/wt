@@ -71,6 +71,8 @@ pub struct WorktreeJson {
     pub ports: BTreeMap<String, u16>,
     pub opts: BTreeMap<String, String>,
     pub url: Option<String>,
+    /// Deadline of the automatic stop (`wt down --expired`), Unix seconds; `null`: none.
+    pub stop_at: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -151,6 +153,7 @@ pub fn worktree(app: &App, wt: &Worktree) -> WorktreeJson {
         ports: wt.state.ports.clone(),
         opts: wt.state.opts.clone(),
         url: app.url(&wt.slug, &wt.state).filter(|u| !u.contains("{{")),
+        stop_at: wt.state.stop_at,
     }
 }
 

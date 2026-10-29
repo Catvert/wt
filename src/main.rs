@@ -87,11 +87,26 @@ enum Cmd {
         slug: Option<String>,
         #[arg(long = "set", value_name = "KEY=VALUE")]
         set: Vec<String>,
+        /// Stop it automatically after this long (90m, 2h, 1h30m, 1d; `never`), through
+        /// `wt down --expired`. Default: WT_STOP_AFTER, otherwise never.
+        #[arg(long, value_name = "DURATION")]
+        stop_after: Option<String>,
     },
     /// Stops a worktree (down hooks). The checkout and state are kept.
     Down {
-        #[arg(add = complete::slugs())]
+        #[arg(add = complete::slugs(), conflicts_with = "expired")]
         slug: Option<String>,
+        /// Stop every worktree whose automatic stop is due (`wt up --stop-after`, `wt
+        /// keep`), for a timer.
+        #[arg(long)]
+        expired: bool,
+    },
+    /// Moves the automatic stop of a started worktree: DURATION from now, or `never`.
+    Keep {
+        #[arg(add = complete::slugs())]
+        slug: String,
+        #[arg(value_name = "DURATION")]
+        duration: String,
     },
     /// Lists the worktrees and their state.
     Ls {
@@ -277,14 +292,20 @@ fn try_main() -> Result<()> {
             set,
             ..
         }) => app.cmd_new(&slug, branch.as_deref(), from.as_deref(), &set),
-        Some(Cmd::Up { slug, set }) => {
+        Some(Cmd::Up {
+            slug,
+            set,
+            stop_after,
+        }) => {
             let slug = selected_slug(&app, slug)?;
-            app.cmd_up(&slug, &set)
+            app.cmd_up_for(&slug, &set, stop_after.as_deref())
         }
-        Some(Cmd::Down { slug }) => {
+        Some(Cmd::Down { expired: true, .. }) => app.cmd_down_expired(),
+        Some(Cmd::Down { slug, .. }) => {
             let slug = selected_slug(&app, slug)?;
             app.cmd_down(&slug)
         }
+        Some(Cmd::Keep { slug, duration }) => app.cmd_keep(&slug, &duration),
         Some(Cmd::Ls { json: true }) => json::print(
             &app.list()
                 .iter()

@@ -62,6 +62,7 @@ export async function getInfo({ directory, detail }: { directory: string; detail
   const base: WtInfo = {
     kind: "none", project: null, worktree: null, detail: null, proxyUrl: null,
     running: null, reachable: {}, error: null, webEditor: null, lazygit: false,
+    defaultStopAfter: process.env.WT_STOP_AFTER?.trim() || null,
   };
   const project: WtProject | null = await wt.root(directory);
   if (!project) return base;
@@ -88,6 +89,11 @@ export async function getInfo({ directory, detail }: { directory: string; detail
     info.reachable = Object.fromEntries(urls.map((u, i) => [u, answers[i]]));
   }
   return info;
+}
+
+export async function keep({ main, slug, duration }: { main: string; slug: string; duration: string }) {
+  const r = await run("wt", ["keep", slug, duration, "-C", main]);
+  return { ok: r.ok, output: (r.stdout + r.stderr).trim() };
 }
 
 let lazygitCheck: Promise<boolean> | null = null;

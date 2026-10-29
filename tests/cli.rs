@@ -700,3 +700,73 @@ source = "echo demo"
 
     wt(dir).args(["rm", "demo", "-y"]).output().unwrap();
 }
+
+#[test]
+fn automatic_stop_deadline() {
+    let project = project(
+        r#"
+[hooks]
+up = ["touch .up"]
+down = ["rm -f .up"]
+
+[status]
+up = "test -f .up"
+"#,
+    );
+    let dir = project.path();
+    let run = |args: &[&str]| {
+        let out = wt(dir)
+            .env_remove("WT_STOP_AFTER")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        out
+    };
+    let stop_at = || -> serde_json::Value {
+        serde_json::from_slice::<serde_json::Value>(&run(&["ls", "--json"]).stdout).unwrap()[0]
+            ["stop_at"]
+            .clone()
+    };
+    run(&["new", "demo"]);
+
+    // No duration given and no WT_STOP_AFTER: no deadline.
+    run(&["up", "demo"]);
+    assert_eq!(stop_at(), serde_json::Value::Null);
+
+    run(&["up", "demo", "--stop-after", "2h"]);
+    let at = stop_at().as_u64().expect("a deadline");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    assert!(at > now + 7000 && at <= now + 7200, "{at} vs {now}");
+
+    // Not due: --expired leaves it alone.
+    run(&["down", "--expired"]);
+    assert_eq!(stop_at().as_u64(), Some(at));
+
+    run(&["keep", "demo", "never"]);
+    assert_eq!(stop_at(), serde_json::Value::Null);
+
+    // WT_STOP_AFTER is the default; due after a second.
+    let out = wt(dir)
+        .env("WT_STOP_AFTER", "1s")
+        .args(["up", "demo"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(stop_at().is_u64());
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    run(&["down", "--expired"]);
+    assert_eq!(stop_at(), serde_json::Value::Null);
+    let ls: serde_json::Value = serde_json::from_slice(&run(&["ls", "--json"]).stdout).unwrap();
+    assert_eq!(ls[0]["up"], false);
+
+    let bad = wt(dir).args(["keep", "demo", "2x"]).output().unwrap();
+    assert!(!bad.status.success());
+}

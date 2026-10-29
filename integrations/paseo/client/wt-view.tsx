@@ -4,7 +4,9 @@ import { Icon, useToast } from "@getpaseo/plugin/client/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
-import { addresses, startTask, toggleValues, tools, upPrompts, wtAdopt, type WtInfo, type WtPrompt } from "../shared/wt";
+import {
+  addresses, formatLeft, startTask, stopChoices, toggleValues, tools, upPrompts, wtAdopt, wtKeep, type WtInfo, type WtPrompt,
+} from "../shared/wt";
 import { useWtInfo } from "./use-wt-info";
 
 type Props = {
@@ -25,6 +27,8 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
   const [startedAt, setStartedAt] = useState<number | null>(null);
   // Réponses changées dans le panneau aux questions de `wt up`, pas encore passées à wt.
   const [edits, setEdits] = useState<Record<string, string>>({});
+  // Durée choisie pour l'arrêt automatique du prochain démarrage ; null : celle par défaut.
+  const [stopAfter, setStopAfter] = useState<string | null>(null);
   const { directory, data, isLoading, error, refetch } = useWtInfo(workspaceId, true, startedAt !== null);
   const paseo = usePaseo();
   // Les terminaux que le plugin a ouverts dans ce workspace : « wt run dev » se reconnaît à son nom.
@@ -43,6 +47,14 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
     mutationFn: () => adoptRpc({ directory: directory as string }),
     onSuccess: (r) => {
       toast.show(r.ok ? "Adopté dans wt" : `Adoption impossible\n${r.output}`, { variant: r.ok ? "success" : "error" });
+      void queryClient.invalidateQueries({ queryKey: ["wt-info", directory] });
+    },
+  });
+  const keepRpc = useRpc(wtKeep);
+  const keep = useMutation({
+    mutationFn: (input: { main: string; slug: string; duration: string }) => keepRpc(input),
+    onSuccess: (r) => {
+      if (!r.ok) toast.show(`wt keep impossible\n${r.output}`, { variant: "error" });
       void queryClient.invalidateQueries({ queryKey: ["wt-info", directory] });
     },
   });
@@ -75,7 +87,13 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
   const stored = (p: WtPrompt) => w.opts[p.name] ?? p.default ?? "";
   const value = (p: WtPrompt) => edits[p.name] ?? stored(p);
   const dirty = prompts.some((p) => edits[p.name] !== undefined && !sameAnswer(p, edits[p.name], stored(p)));
-  const upArgs = ["up", w.slug, ...prompts.flatMap((p) => ["--set", `${p.name}=${value(p)}`])];
+  // L'arrêt automatique (wt ≥ 0.11, qui donne stop_at) : la durée choisie, sinon WT_STOP_AFTER.
+  const autoStop = w.stop_at !== undefined;
+  const stopValue = stopAfter ?? data.defaultStopAfter ?? "never";
+  const upArgs = [
+    "up", w.slug, ...prompts.flatMap((p) => ["--set", `${p.name}=${value(p)}`]),
+    ...(autoStop ? ["--stop-after", stopValue] : []),
+  ];
   const up = () => {
     setEdits({});
     void inTerminal("wt up", upArgs);
@@ -176,6 +194,36 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
               <Text style={s.value}>{t.label}</Text>
             </Pressable>
           ))}
+        </View>
+      ) : null}
+      {autoStop && project.has_up ? (
+        <View style={[s.row, { flexWrap: "wrap" }]}>
+          <Text style={s.muted}>
+            {!data.running
+              ? "Arrêt auto après"
+              : w.stop_at
+                ? `Arrêt auto dans ${formatLeft(w.stop_at - Date.now() / 1000)} · garder`
+                : "Sans arrêt auto · garder"}
+          </Text>
+          {stopChoices(data.defaultStopAfter).map((c) => {
+            const on = !data.running && c.value === stopValue;
+            return (
+              <Pressable
+                key={c.value}
+                accessibilityRole={data.running ? "button" : "radio"}
+                accessibilityState={data.running ? undefined : { checked: on }}
+                disabled={keep.isPending}
+                style={on ? s.pillOn : s.pill}
+                onPress={() =>
+                  data.running
+                    ? keep.mutate({ main: project.main, slug: w.slug, duration: c.value })
+                    : setStopAfter(c.value)
+                }
+              >
+                <Text style={on ? s.primaryText : s.value}>{c.label}</Text>
+              </Pressable>
+            );
+          })}
         </View>
       ) : null}
       {start && !startTerminal && data.running ? (

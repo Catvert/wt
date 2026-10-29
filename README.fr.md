@@ -123,8 +123,10 @@ wt pick                 # sélecteur fuzzy : worktree, puis action
 | `wt init [--preset plain\|web] [--force]` | écrit un `wt.toml` d'exemple |
 | `wt new <slug> [branche] [--from ref] [--set k=v]` | checkout + dossiers + copies + hooks `post_new` |
 | `wt new <slug> --adopt <chemin> [--set k=v]` | idem, pour un worktree git déjà créé par un autre outil (voir plus bas) |
-| `wt up [slug] [--set k=v]` | hooks `up` (et allocation des ports, s'il y en a) |
+| `wt up [slug] [--set k=v] [--stop-after 8h]` | hooks `up` (et allocation des ports, s'il y en a) ; `--stop-after` (défaut `WT_STOP_AFTER`) fixe un arrêt automatique |
 | `wt down [slug]` | hooks `down` — le checkout et l'état sont conservés |
+| `wt down --expired` | arrête les worktrees dont l'arrêt automatique est échu — pour un minuteur (systemd, cron) |
+| `wt keep <slug> <2h\|never>` | déplace l'arrêt automatique : dans cette durée, ou jamais |
 | `wt ls` / `wt show [slug]` | état des worktrees (`--json` : voir plus bas) |
 | `wt rm [slug] [-y]` | hooks `pre_rm`, retrait du worktree, hooks `post_rm` |
 | `wt gc [--apply] [--forget slug] [slug…]` | nettoie après des worktrees supprimés sans `wt rm` (simulation par défaut, voir [docs/gc.md](docs/gc.md)) |
@@ -574,6 +576,7 @@ raccourci est `o`.
 | `WT_LANG` | langue de l'interface (`en`, `fr`) ; sinon `LC_ALL`/`LC_MESSAGES`/`LANG`, puis l'anglais |
 | `WT_CONFIG` | chemin d'un `wt.toml` alternatif |
 | `WT_ROOT` | racine des worktrees des projets dont le `wt.toml` n'en fixe pas (même modèle, par ex. `{{main}}/../worktrees/{{repo}}` ; défaut `{{main}}/../{{repo}}-wt`) |
+| `WT_STOP_AFTER` | `wt up --stop-after` par défaut (`8h`, `90m`…) : un worktree démarré s'arrête seul quand `wt down --expired` passe après l'échéance |
 | `WT_IDE` | éditeur prioritaire (commande ou chemin absolu, `.exe` Windows compris) |
 | `WT_TERMINAL` | shell ouvert dans le worktree (défaut `$SHELL`) |
 | `WT_SHELL` | shell des hooks (défaut `sh`) |
