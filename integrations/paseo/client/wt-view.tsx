@@ -81,16 +81,14 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
     void inTerminal("wt up", upArgs);
   };
 
-  // Dans un terminal Paseo : les [[prompt]] de wt ont un vrai pty, et la sortie reste visible.
-  const inTerminal = async (name: string, args: string[], close = true) => {
-    await paseo.workspaces.ref(workspaceId).terminals.create({
-      name,
-      command: "wt",
-      args: ["-C", project.main, ...args],
-    });
+  const terminal = async (name: string, command: string, args: string[], close = true) => {
+    await paseo.workspaces.ref(workspaceId).terminals.create({ name, command, args });
     void terminals.refetch();
     if (close) onDone?.();
   };
+  // Dans un terminal Paseo : les [[prompt]] de wt ont un vrai pty, et la sortie reste visible.
+  const inTerminal = (name: string, args: string[], close = true) =>
+    terminal(name, "wt", ["-C", project.main, ...args], close);
   const start = startTask(project);
   const startTerminal = start ? terminals.data?.find((t) => t.name === `wt run ${start.name}`) : undefined;
   const reachable = (url: string) => data.reachable[url];
@@ -142,8 +140,30 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
           </Button>
         ) : null}
       </View>
-      {tools(data).length > 0 ? (
+      {tools(data).length > 0 || data.webEditor || data.lazygit ? (
         <View style={[s.row, { flexWrap: "wrap" }]}>
+          {data.webEditor ? (
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Ouvrir le worktree dans VS Code"
+              style={[s.tool, reachable(data.webEditor) === false && { opacity: 0.5 }]}
+              onPress={() => open(data.webEditor as string, true)}
+            >
+              <Icon name="Code" size={14} color={theme.colors.foreground} />
+              <Text style={s.value}>VS Code</Text>
+            </Pressable>
+          ) : null}
+          {data.lazygit ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="lazygit dans un terminal"
+              style={s.tool}
+              onPress={() => void terminal("lazygit", "lazygit", ["-p", w.checkout])}
+            >
+              <Icon name="GitBranch" size={14} color={theme.colors.foreground} />
+              <Text style={s.value}>lazygit</Text>
+            </Pressable>
+          ) : null}
           {tools(data).map((t) => (
             <Pressable
               key={t.url}

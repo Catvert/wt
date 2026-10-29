@@ -26,6 +26,10 @@ its ports, copies, dependencies and hooks, and knows its addresses.
   Paseo browser tab. Paseo gives that tab only to panels: the popover borrows it from a `wt`
   panel already shown on the same host (in a tab or the Explorer), and falls back to the
   system browser until then.
+- **Git.** Two more buttons in that row: **VS Code**, a web editor opened on the worktree when
+  the daemon has `WT_WEB_EDITOR_URL` (`{path}` stands for the checkout, URL-encoded: for
+  example openvscode-server's `https://code.example/?folder={path}`), and **lazygit** in a
+  Paseo terminal of the workspace, when it is on the daemon's `PATH`.
 - **Terminals.** `wt up`, `wt down` and every task run in a Paseo terminal of the
   workspace, so `[[prompt]]` questions can be answered and the output stays visible.
 - **Cleanup.** When a workspace is archived, the plugin waits for Paseo to delete the

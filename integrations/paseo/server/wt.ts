@@ -61,7 +61,7 @@ export const adopting = new Set<string>();
 export async function getInfo({ directory, detail }: { directory: string; detail: boolean }): Promise<WtInfo> {
   const base: WtInfo = {
     kind: "none", project: null, worktree: null, detail: null, proxyUrl: null,
-    running: null, reachable: {}, error: null,
+    running: null, reachable: {}, error: null, webEditor: null, lazygit: false,
   };
   const project: WtProject | null = await wt.root(directory);
   if (!project) return base;
@@ -73,16 +73,27 @@ export async function getInfo({ directory, detail }: { directory: string; detail
     run("wt-proxy-url", [directory], 5000),
   ]);
   const proxyUrl = proxy.ok && proxy.stdout.trim().startsWith("http") ? proxy.stdout.trim() : null;
-  const info: WtInfo = { ...base, kind: "worktree", project, worktree, detail: show, proxyUrl };
+  const editor = process.env.WT_WEB_EDITOR_URL;
+  const info: WtInfo = {
+    ...base, kind: "worktree", project, worktree, detail: show, proxyUrl,
+    webEditor: editor ? editor.replace("{path}", encodeURIComponent(worktree.checkout)) : null,
+    lazygit: await hasLazygit(),
+  };
   const ports = Object.values(worktree.ports);
   info.running =
     worktree.up ?? (ports.length > 0 ? (await Promise.all(ports.map(listening))).some(Boolean) : null);
   if (detail) {
-    const urls = [...addresses(info), ...tools(info)].map((a) => a.url);
+    const urls = [...addresses(info), ...tools(info)].map((a) => a.url).concat(info.webEditor ?? []);
     const answers = await Promise.all(urls.map(responds));
     info.reachable = Object.fromEntries(urls.map((u, i) => [u, answers[i]]));
   }
   return info;
+}
+
+let lazygitCheck: Promise<boolean> | null = null;
+function hasLazygit() {
+  lazygitCheck ??= run("lazygit", ["--version"], 5000).then((r) => r.ok);
+  return lazygitCheck;
 }
 
 /** Un port écoute-t-il en local ? */

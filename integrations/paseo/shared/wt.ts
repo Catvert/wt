@@ -79,6 +79,10 @@ export const wtInfoSchema = z.object({
   running: z.boolean().nullable(),
   // Avec detail : chaque adresse répond-elle (par URL) ?
   reachable: z.record(z.string(), z.boolean()),
+  // L'éditeur web de la machine ouvert sur ce worktree (WT_WEB_EDITOR_URL, {path} : son dossier).
+  webEditor: z.string().nullable().default(null),
+  // lazygit est-il sur le PATH du démon ?
+  lazygit: z.boolean().default(false),
   error: z.string().nullable(),
 });
 export type WtInfo = z.infer<typeof wtInfoSchema>;

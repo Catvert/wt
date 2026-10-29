@@ -22,6 +22,9 @@ All notable changes to this project are documented here. The format follows
   in `links` of `--json` with its `icon`.
 - Paseo plugin: those tools are buttons in the popover and the panel; they open in a Paseo
   browser tab.
+- Paseo plugin: a **VS Code** button opens the worktree in a web editor (`WT_WEB_EDITOR_URL`
+  on the daemon, `{path}` for the checkout), and a **lazygit** button runs lazygit on it in a
+  Paseo terminal.
 
 ### Fixed
 
