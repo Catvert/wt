@@ -10,11 +10,12 @@ its ports, copies, dependencies and hooks, and knows its addresses.
   left to it. A checkout wt does not know yet can be adopted by hand from the panel.
 - **Header button.** Each adopted workspace gets a `wt · <port>` button. Its popover lists
   the worktree's addresses (the `[open]` URL and `[open] source` entries, the machine's
-  `wt-proxy-url` when there is one, otherwise one `localhost` address per port) and starts
-  or stops it.
+  `wt-proxy-url` when there is one, otherwise one `localhost` address per port), asks the
+  `wt up` questions described below, and starts or stops it.
 - **Panel.** The `wt` panel, in a tab or in the Explorer, adds the options, the
   `[status.info]` probes, the uncommitted changes and the `wt.toml` tasks. The `wt up`
-  questions with fixed choices (`[[prompt]]` without `source` or `when`) are asked there:
+  questions with fixed choices (`[[prompt]]` without `source` or `when`) are asked there, as
+  in the popover but with each choice's detail:
   checkboxes for `multi` and yes/no choices, pills otherwise, preset to the worktree's saved
   answers or the `wt.toml` default. Start passes them with `--set`; on a running worktree,
   changing one offers to apply it (`wt up` again). The other questions stay in the terminal. On desktop an

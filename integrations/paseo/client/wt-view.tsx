@@ -67,9 +67,10 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
   const w = data.worktree!;
   const detail = data.detail;
 
-  // Les questions de `wt up` posées ici : la réponse enregistrée du worktree, à défaut le défaut du
-  // wt.toml. « Démarrer » les passe toutes en --set ; wt les enregistre et ne les redemande pas.
-  const prompts = full ? upPrompts(project) : [];
+  // Les questions de `wt up` posées ici, dans le popover comme dans le panneau : la réponse
+  // enregistrée du worktree, à défaut le défaut du wt.toml. « Démarrer » les passe toutes en
+  // --set ; wt les enregistre et ne les redemande pas.
+  const prompts = upPrompts(project);
   const stored = (p: WtPrompt) => w.opts[p.name] ?? p.default ?? "";
   const value = (p: WtPrompt) => edits[p.name] ?? stored(p);
   const dirty = prompts.some((p) => edits[p.name] !== undefined && !sameAnswer(p, edits[p.name], stored(p)));
@@ -150,6 +151,7 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
               s={s}
               theme={theme}
               prompt={p}
+              details={full}
               value={value(p)}
               onChange={(v) => setEdits((e) => ({ ...e, [p.name]: v }))}
             />
@@ -229,10 +231,12 @@ function sameAnswer(p: WtPrompt, a: string, b: string) {
 }
 
 /** Une question de `wt up` : cases à cocher (multiple, oui/non) ou pastilles (choix). */
-function PromptField({ s, theme, prompt: p, value, onChange }: {
+function PromptField({ s, theme, prompt: p, details, value, onChange }: {
   s: S;
   theme: PluginTheme;
   prompt: WtPrompt;
+  // Les explications des choix : dans le panneau, pas dans le popover, qui reste court.
+  details: boolean;
   value: string;
   onChange(value: string): void;
 }) {
@@ -240,7 +244,7 @@ function PromptField({ s, theme, prompt: p, value, onChange }: {
   if (toggle) {
     const current = p.options.find((o) => o.value === value);
     return (
-      <Check s={s} theme={theme} checked={value === toggle.on} label={p.question} detail={current?.detail}
+      <Check s={s} theme={theme} checked={value === toggle.on} label={p.question} detail={details ? current?.detail : undefined}
         onPress={() => onChange(value === toggle.on ? toggle.off : toggle.on)} />
     );
   }
@@ -257,7 +261,7 @@ function PromptField({ s, theme, prompt: p, value, onChange }: {
         <Text style={s.muted}>{p.question}</Text>
         {p.options.map((o) => (
           <Check key={o.value} s={s} theme={theme} checked={selected.includes(o.value)} label={o.label || o.value}
-            detail={o.detail} onPress={() => flip(o.value)} />
+            detail={details ? o.detail : undefined} onPress={() => flip(o.value)} />
         ))}
       </View>
     );
