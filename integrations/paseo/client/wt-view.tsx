@@ -4,7 +4,7 @@ import { useToast } from "@getpaseo/plugin/client/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
-import { addresses, startTask, wtAdopt, type WtInfo } from "../shared/wt";
+import { addresses, startTask, toggleValues, upPrompts, wtAdopt, type WtInfo, type WtPrompt } from "../shared/wt";
 import { useWtInfo } from "./use-wt-info";
 
 type Props = {
@@ -22,6 +22,8 @@ type Props = {
 export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone, onDetails }: Props) {
   // Après « Démarrer », on regarde plus souvent jusqu'à ce que le projet réponde.
   const [startedAt, setStartedAt] = useState<number | null>(null);
+  // Réponses changées dans le panneau aux questions de `wt up`, pas encore passées à wt.
+  const [edits, setEdits] = useState<Record<string, string>>({});
   const { directory, data, isLoading, error, refetch } = useWtInfo(workspaceId, true, startedAt !== null);
   const paseo = usePaseo();
   // Les terminaux que le plugin a ouverts dans ce workspace : « wt run dev » se reconnaît à son nom.
@@ -65,6 +67,18 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
   const w = data.worktree!;
   const detail = data.detail;
 
+  // Les questions de `wt up` posées ici : la réponse enregistrée du worktree, à défaut le défaut du
+  // wt.toml. « Démarrer » les passe toutes en --set ; wt les enregistre et ne les redemande pas.
+  const prompts = full ? upPrompts(project) : [];
+  const stored = (p: WtPrompt) => w.opts[p.name] ?? p.default ?? "";
+  const value = (p: WtPrompt) => edits[p.name] ?? stored(p);
+  const dirty = prompts.some((p) => edits[p.name] !== undefined && !sameAnswer(p, edits[p.name], stored(p)));
+  const upArgs = ["up", w.slug, ...prompts.flatMap((p) => ["--set", `${p.name}=${value(p)}`])];
+  const up = () => {
+    setEdits({});
+    void inTerminal("wt up", upArgs);
+  };
+
   // Dans un terminal Paseo : les [[prompt]] de wt ont un vrai pty, et la sortie reste visible.
   const inTerminal = async (name: string, args: string[], close = true) => {
     await paseo.workspaces.ref(workspaceId).terminals.create({
@@ -94,7 +108,10 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
 
       <View style={[s.row, { flexWrap: "wrap" }]}>
         {project.has_up && !data.running ? (
-          <Button s={s} primary onPress={() => void inTerminal("wt up", ["up", w.slug])}>▶ Démarrer (wt up)</Button>
+          <Button s={s} primary onPress={up}>▶ Démarrer (wt up)</Button>
+        ) : null}
+        {project.has_up && data.running && dirty ? (
+          <Button s={s} primary onPress={up}>↻ Appliquer (wt up)</Button>
         ) : null}
         {project.has_down && data.running ? (
           <Button s={s} onPress={() => void inTerminal("wt down", ["down", w.slug])}>■ Arrêter (wt down)</Button>
@@ -123,6 +140,22 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
       ) : null}
       {!project.has_up && !start && data.running === false ? (
         <Text style={s.muted}>Rien n'écoute sur ses ports, et le wt.toml ne dit pas comment le démarrer.</Text>
+      ) : null}
+
+      {prompts.length > 0 ? (
+        <Section s={s} title="Au démarrage">
+          {prompts.map((p) => (
+            <PromptField
+              key={p.name}
+              s={s}
+              theme={theme}
+              prompt={p}
+              value={value(p)}
+              onChange={(v) => setEdits((e) => ({ ...e, [p.name]: v }))}
+            />
+          ))}
+          {data.running && dirty ? <Text style={s.muted}>Appliquer relance wt up avec ces réponses.</Text> : null}
+        </Section>
       ) : null}
 
       <Section s={s} title="Adresses">
@@ -184,6 +217,87 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
 }
 
 type S = ReturnType<typeof styles>;
+
+function split(p: WtPrompt, value: string) {
+  return value.split(p.separator).map((v) => v.trim()).filter(Boolean);
+}
+
+/** Même réponse, à l'ordre près pour un choix multiple. */
+function sameAnswer(p: WtPrompt, a: string, b: string) {
+  if (p.type !== "multi") return a === b;
+  return split(p, a).sort().join(p.separator) === split(p, b).sort().join(p.separator);
+}
+
+/** Une question de `wt up` : cases à cocher (multiple, oui/non) ou pastilles (choix). */
+function PromptField({ s, theme, prompt: p, value, onChange }: {
+  s: S;
+  theme: PluginTheme;
+  prompt: WtPrompt;
+  value: string;
+  onChange(value: string): void;
+}) {
+  const toggle = toggleValues(p);
+  if (toggle) {
+    const current = p.options.find((o) => o.value === value);
+    return (
+      <Check s={s} theme={theme} checked={value === toggle.on} label={p.question} detail={current?.detail}
+        onPress={() => onChange(value === toggle.on ? toggle.off : toggle.on)} />
+    );
+  }
+  if (p.type === "multi") {
+    const selected = split(p, value);
+    // Une valeur enregistrée hors des choix (ancien wt.toml) est gardée telle quelle.
+    const extra = selected.filter((v) => !p.options.some((o) => o.value === v));
+    const flip = (v: string) => {
+      const next = selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v];
+      onChange([...p.options.map((o) => o.value).filter((x) => next.includes(x)), ...extra].join(p.separator));
+    };
+    return (
+      <View style={{ gap: 2 }}>
+        <Text style={s.muted}>{p.question}</Text>
+        {p.options.map((o) => (
+          <Check key={o.value} s={s} theme={theme} checked={selected.includes(o.value)} label={o.label || o.value}
+            detail={o.detail} onPress={() => flip(o.value)} />
+        ))}
+      </View>
+    );
+  }
+  return (
+    <View style={{ gap: 4 }}>
+      <Text style={s.muted}>{p.question}</Text>
+      <View style={[s.row, { flexWrap: "wrap" }]}>
+        {p.options.map((o) => (
+          <Pressable key={o.value} accessibilityRole="radio" accessibilityState={{ checked: o.value === value }}
+            style={o.value === value ? s.pillOn : s.pill} onPress={() => onChange(o.value)}>
+            <Text style={o.value === value ? s.primaryText : s.value}>{o.label || o.value}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function Check({ s, theme, checked, label, detail, onPress }: {
+  s: S;
+  theme: PluginTheme;
+  checked: boolean;
+  label: string;
+  detail?: string;
+  onPress(): void;
+}) {
+  const c = theme.colors;
+  return (
+    <Pressable accessibilityRole="checkbox" accessibilityState={{ checked }} style={s.check} onPress={onPress}>
+      <View style={[s.box, checked && { backgroundColor: c.accent, borderColor: c.accent }]}>
+        {checked ? <Text style={{ color: c.accentForeground, fontSize: 11, lineHeight: 14 }}>✓</Text> : null}
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={s.value}>{label}</Text>
+        {detail ? <Text style={[s.muted, { fontSize: 12 }]} numberOfLines={2}>{detail}</Text> : null}
+      </View>
+    </Pressable>
+  );
+}
 
 function Section({ s, title, children }: { s: S; title: string; children: ReactNode }) {
   return (
@@ -289,5 +403,12 @@ function styles(theme: PluginTheme, compact: boolean) {
     primary: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, backgroundColor: c.accent },
     primaryText: { color: c.accentForeground },
     ghost: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, borderWidth: 1, borderColor: c.border },
+    check: { flexDirection: "row" as const, alignItems: "flex-start" as const, gap: 8, paddingVertical: 4 },
+    box: {
+      width: 16, height: 16, marginTop: 1, borderRadius: 4, borderWidth: 1.5, borderColor: c.foregroundMuted,
+      alignItems: "center" as const, justifyContent: "center" as const,
+    },
+    pill: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12, borderWidth: 1, borderColor: c.border },
+    pillOn: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12, borderWidth: 1, borderColor: c.accent, backgroundColor: c.accent },
   };
 }

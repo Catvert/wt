@@ -10,6 +10,19 @@ export const taskSchema = z.object({
   interactive: z.boolean(),
 });
 
+export const promptSchema = z.object({
+  name: z.string(),
+  question: z.string(),
+  type: z.enum(["choice", "multi", "confirm", "text"]),
+  ask: z.enum(["up", "new", "both", "task"]),
+  options: z.array(z.object({ value: z.string(), label: z.string(), detail: z.string() })),
+  has_source: z.boolean(),
+  default: z.string().nullable(),
+  separator: z.string(),
+  when: z.string().nullable(),
+  always: z.boolean(),
+});
+
 export const projectSchema = z.object({
   name: z.string(),
   config: z.string(),
@@ -21,6 +34,8 @@ export const projectSchema = z.object({
   has_ports: z.boolean(),
   has_open: z.boolean(),
   tasks: z.array(taskSchema),
+  // wt ≥ 0.11 ; absent avant.
+  prompts: z.array(promptSchema).default([]),
 });
 
 export const worktreeSchema = z.object({
@@ -43,6 +58,7 @@ export const detailSchema = worktreeSchema.extend({
 });
 
 export type WtProject = z.infer<typeof projectSchema>;
+export type WtPrompt = z.infer<typeof promptSchema>;
 export type WtWorktree = z.infer<typeof worktreeSchema>;
 export type WtDetail = z.infer<typeof detailSchema>;
 export type WtLink = z.infer<typeof linkSchema>;
@@ -99,4 +115,30 @@ export function addresses(info: WtInfo): WtLink[] {
     }
   }
   return out;
+}
+
+/**
+ * Les questions de `wt up` que le panneau peut poser lui-même : choix fixes, sans condition
+ * (`when` dépend de réponses qu'il ne peut pas évaluer). Les autres restent au dialogue de wt,
+ * dans le terminal.
+ */
+export function upPrompts(project: WtProject): WtPrompt[] {
+  return project.prompts.filter(
+    (p) =>
+      (p.ask === "up" || p.ask === "both") &&
+      !p.has_source &&
+      p.when === null &&
+      (p.type === "confirm" || (p.type !== "text" && p.options.length > 0)),
+  );
+}
+
+/** Un choix oui/non (`yes`/`no`, `1`/`0`…) : une case à cocher plutôt que deux pastilles. */
+export function toggleValues(p: WtPrompt): { on: string; off: string } | null {
+  if (p.type === "confirm") return { on: "1", off: "0" };
+  if (p.type !== "choice" || p.options.length !== 2) return null;
+  const values = p.options.map((o) => o.value);
+  for (const [on, off] of [["yes", "no"], ["oui", "non"], ["1", "0"], ["true", "false"], ["on", "off"]]) {
+    if (values.includes(on) && values.includes(off)) return { on, off };
+  }
+  return null;
 }

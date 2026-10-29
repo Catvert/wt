@@ -618,10 +618,26 @@ greeting = "echo hi"
 [tasks.hello]
 description = "says hello"
 run = "echo hello"
+
+[[prompt]]
+name = "services"
+question = "services"
+type = "multi"
+default = "queue"
+options = [{ value = "queue", label = "Horizon" }, { value = "reverb" }]
+
+[[prompt]]
+name = "tenants"
+ask = "both"
+type = "multi"
+source = "echo demo"
 "#,
     );
     let dir = project.path();
-    wt(dir).args(["new", "demo"]).output().unwrap();
+    wt(dir)
+        .args(["new", "demo", "--set", "tenants=demo"])
+        .output()
+        .unwrap();
     let json = |args: &[&str]| -> serde_json::Value {
         // French on purpose: the JSON must not follow the locale.
         let out = wt(dir).env("WT_LANG", "fr").args(args).output().unwrap();
@@ -658,6 +674,18 @@ run = "echo hello"
     assert_eq!(root["has_up"], false);
     assert_eq!(root["tasks"][0]["name"], "hello");
     assert_eq!(json(&["tasks", "--json"]), root["tasks"]);
+    let services = &root["prompts"][0];
+    assert_eq!(services["name"], "services");
+    assert_eq!(services["type"], "multi");
+    assert_eq!(services["ask"], "up");
+    assert_eq!(services["default"], "queue");
+    assert_eq!(services["separator"], ",");
+    assert_eq!(services["has_source"], false);
+    assert_eq!(services["options"][0]["label"], "Horizon");
+    assert_eq!(services["options"][1]["label"], "");
+    assert_eq!(root["prompts"][1]["ask"], "both");
+    assert_eq!(root["prompts"][1]["has_source"], true);
+    assert_eq!(root["prompts"][1]["question"], "tenants");
 
     // `--json` only makes sense with `--list`: opening a browser has no output to format.
     assert!(!wt(dir)

@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
+use crate::config::{Ask, PromptKind, PromptOption};
 use crate::ops::App;
 use crate::state::{self, Worktree};
 
@@ -26,6 +27,27 @@ pub struct ProjectJson {
     pub has_ports: bool,
     pub has_open: bool,
     pub tasks: Vec<TaskJson>,
+    /// The `[[prompt]]` questions, so a consumer can ask them in its own UI and pass the
+    /// answers with `--set`. Computed choices (`source`) are not run here: `has_source` says a
+    /// prompt has some, to be left to wt's own dialogue.
+    pub prompts: Vec<PromptJson>,
+}
+
+#[derive(Serialize)]
+pub struct PromptJson {
+    pub name: String,
+    /// The label to display: `question`, or the name.
+    pub question: String,
+    #[serde(rename = "type")]
+    pub kind: PromptKind,
+    pub ask: Ask,
+    pub options: Vec<PromptOption>,
+    pub has_source: bool,
+    pub default: Option<String>,
+    pub separator: String,
+    /// The `when` shell condition, unevaluated.
+    pub when: Option<String>,
+    pub always: bool,
 }
 
 #[derive(Serialize)]
@@ -81,6 +103,24 @@ pub fn project(app: &App) -> ProjectJson {
         has_ports: app.has_ports(),
         has_open: app.has_open(),
         tasks: tasks(app),
+        prompts: app
+            .project
+            .config
+            .prompts
+            .iter()
+            .map(|p| PromptJson {
+                name: p.name.clone(),
+                question: p.title().to_string(),
+                kind: p.kind,
+                ask: p.ask,
+                options: p.options.clone(),
+                has_source: p.source.is_some(),
+                default: p.default.clone(),
+                separator: p.separator.clone(),
+                when: p.when.clone(),
+                always: p.always,
+            })
+            .collect(),
     }
 }
 

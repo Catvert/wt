@@ -13,7 +13,11 @@ its ports, copies, dependencies and hooks, and knows its addresses.
   `wt-proxy-url` when there is one, otherwise one `localhost` address per port) and starts
   or stops it.
 - **Panel.** The `wt` panel, in a tab or in the Explorer, adds the options, the
-  `[status.info]` probes, the uncommitted changes and the `wt.toml` tasks. On desktop an
+  `[status.info]` probes, the uncommitted changes and the `wt.toml` tasks. The `wt up`
+  questions with fixed choices (`[[prompt]]` without `source` or `when`) are asked there:
+  checkboxes for `multi` and yes/no choices, pills otherwise, preset to the worktree's saved
+  answers or the `wt.toml` default. Start passes them with `--set`; on a running worktree,
+  changing one offers to apply it (`wt up` again). The other questions stay in the terminal. On desktop an
   address opens in a Paseo browser tab, the arrow next to it in the system browser.
 - **Terminals.** `wt up`, `wt down` and every task run in a Paseo terminal of the
   workspace, so `[[prompt]]` questions can be answered and the output stays visible.
@@ -23,7 +27,8 @@ its ports, copies, dependencies and hooks, and knows its addresses.
 
 ## Setup
 
-`wt` 0.10 or later must be on the daemon's `PATH` (the plugin relies on `--json`). Paseo
+`wt` 0.10 or later must be on the daemon's `PATH` (the plugin relies on `--json`); the
+start-up questions in the panel need the next release (`prompts` in `wt root --json`). Paseo
 0.13.2 or later.
 
 ## Limits
