@@ -14,9 +14,9 @@ All notable changes to this project are documented here. The format follows
 - `wt root --json` lists the `[[prompt]]` questions (`prompts`: type, phase, fixed choices,
   default, whether choices are computed by a `source`, the `when` condition), so a tool can
   ask them itself and pass the answers with `--set`.
-- Paseo plugin: the panel and the header popover ask the `wt up` questions with fixed choices (checkboxes for
-  `multi` and yes/no, pills otherwise), preset to the saved answers, and passes them to
-  `wt up`; on a running worktree, a changed answer can be applied.
+- Paseo plugin: the panel and the header popover ask the `wt up` questions with fixed
+  choices (checkboxes for `multi` and yes/no, pills otherwise), preset to the saved answers,
+  and pass them to `wt up`; on a running worktree, a changed answer can be applied.
 
 ### Fixed
 
