@@ -1,6 +1,13 @@
 _version: 1
 
 err:
+  no_main: "no [main] in %{path} — the main repository is not one of the worktrees"
+  no_main_up: "no [main] up in %{path} — nothing to run in the main repository"
+  main_running: "the main repository is already started (wt down @ stops it)"
+  main_no_group: "the main repository is starting, try again in a moment"
+  main_still_running: "the main repository's command (process group %{group}) did not stop"
+  main_not_removable: "the main repository is not removable"
+  main_reserved: "'@' is the main repository, not a worktree slug"
   bad_duration: "invalid duration '%{value}' (e.g. 90m, 2h, 1h30m, 1d, never)"
   expired_failed: "%{failed} expired worktree(s) could not be stopped"
   adopt_not_worktree: "%{path} is not a git worktree of this repository"
@@ -31,6 +38,7 @@ err:
   interactive_tty: "the interactive interface needs a terminal (use a subcommand in scripts)"
 
 label:
+  kept_main: "ports and state kept"
   stop_at: "auto stop"
   url: "url"
   path: "path"
@@ -46,6 +54,8 @@ label:
   root: "root"
 
 ok:
+  main_stopped: "main repository stopped"
+  main_ended: "main repository: command ended"
   keep: "worktree '%{slug}' stops automatically in %{left}"
   keep_forever: "worktree '%{slug}': no automatic stop"
   adopted: "worktree '%{slug}' adopted: %{path}"
@@ -73,6 +83,7 @@ hint:
   no_shell_integration: "shell integration missing — add `eval \"$(wt shell-init %{shell})\"` to your rc file, or use `wt shell %{slug}`"
 
 info:
+  main_not_running: "the main repository is not started"
   stops_in: "automatic stop in %{left} (wt keep to change it)"
   in: "in %{left}"
   expired: "worktree '%{slug}': automatic stop due"

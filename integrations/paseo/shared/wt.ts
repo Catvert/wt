@@ -38,10 +38,14 @@ export const projectSchema = z.object({
   tasks: z.array(taskSchema),
   // wt ≥ 0.11 ; absent avant.
   prompts: z.array(promptSchema).default([]),
+  // Le dépôt principal est un worktree, `@` (un [main] dans le wt.toml) ; wt ≥ 0.11.
+  has_main: z.boolean().default(false),
 });
 
 export const worktreeSchema = z.object({
   slug: z.string(),
+  // Le dépôt principal, `@` : `wt up @` au premier plan, ni questions ni suppression.
+  main: z.boolean().default(false),
   dir: z.string(),
   checkout: z.string(),
   adopted: z.boolean(),
@@ -69,7 +73,8 @@ export type WtDetail = z.infer<typeof detailSchema>;
 export type WtLink = z.infer<typeof linkSchema>;
 
 export const wtInfoSchema = z.object({
-  // none : pas de wt.toml · main : le dépôt principal · worktree : géré par wt
+  // none : pas de wt.toml · main : le dépôt principal, sans [main] · worktree : géré par wt
+  // (le dépôt principal compris, `@`, quand le wt.toml a un [main])
   // adopting : adoption en cours · unmanaged : checkout du projet que wt ne connaît pas
   kind: z.enum(["none", "main", "worktree", "adopting", "unmanaged"]),
   project: projectSchema.nullable(),
@@ -131,8 +136,8 @@ export const wtAdopt = defineRpc({
  * La tâche qui démarre le projet quand le wt.toml n'a pas de hook `up` : un serveur de dev
  * lancé par `wt run dev`, par exemple.
  */
-export function startTask(project: WtProject) {
-  if (project.has_up) return null;
+export function startTask(project: WtProject, worktree: WtWorktree) {
+  if (project.has_up || worktree.main) return null;
   return project.tasks.find((t) => ["dev", "start", "serve"].includes(t.name)) ?? null;
 }
 

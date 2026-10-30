@@ -14,7 +14,7 @@ use std::sync::{Mutex, OnceLock};
 use anyhow::{bail, Context, Result};
 
 use crate::config::{Allocate, Ask, Commands, Cwd, Project, Prompt, PromptKind, PromptOption};
-use crate::state::{self, Worktree, WtState};
+use crate::state::{self, Worktree, WtState, MAIN_SLUG};
 use crate::tmpl::{self, Vars};
 use crate::util::{self, Msg};
 
@@ -93,11 +93,41 @@ impl App {
     }
 
     pub fn dir(&self, slug: &str) -> PathBuf {
+        if state::is_main(slug) {
+            return self.project.main.clone();
+        }
         self.root.join(slug)
     }
 
+    /// The worktrees, preceded by the main repository's `@` when the wt.toml has a
+    /// `[main]`.
     pub fn list(&self) -> Vec<Worktree> {
-        state::list(&self.root)
+        let mut out = Vec::new();
+        if self.has_main() {
+            out.push(Worktree {
+                slug: MAIN_SLUG.into(),
+                path: self.project.main.clone(),
+                state: state::load(&self.root, MAIN_SLUG),
+            });
+        }
+        out.extend(state::list(&self.root));
+        out
+    }
+
+    /// The worktree `dir` is in: the slug of the checkout that contains it, `@` for the
+    /// main repository when the wt.toml has a `[main]`. The deepest checkout wins — a
+    /// `root` inside the main repository puts the worktrees within it.
+    pub fn slug_at(&self, dir: &Path) -> Option<String> {
+        let dir = fs::canonicalize(dir).ok()?;
+        self.list()
+            .into_iter()
+            .filter_map(|w| {
+                let checkout = fs::canonicalize(state::checkout(&w.path, &w.state)).ok()?;
+                dir.starts_with(&checkout)
+                    .then(|| (checkout.components().count(), w.slug))
+            })
+            .max_by_key(|(depth, _)| *depth)
+            .map(|(_, slug)| slug)
     }
 
     // Not every project has services: a library, a CLI or a game only need the
@@ -121,6 +151,26 @@ impl App {
     pub fn has_tasks(&self) -> bool {
         !self.project.config.tasks.is_empty()
     }
+    /// Is the main repository one of the worktrees, `@`?
+    pub fn has_main(&self) -> bool {
+        self.project.config.main.is_some()
+    }
+    /// Does `wt up <slug>` start anything? `@` has its own command, the worktrees the
+    /// `up` hooks.
+    pub fn has_up_for(&self, slug: &str) -> bool {
+        match &self.project.config.main {
+            Some(main) if state::is_main(slug) => !main.up.is_empty(),
+            _ => self.has_up(),
+        }
+    }
+    /// Does `wt down <slug>` stop anything? `@` is stopped by wt itself.
+    pub fn has_down_for(&self, slug: &str) -> bool {
+        if state::is_main(slug) {
+            self.has_up_for(slug)
+        } else {
+            self.has_down()
+        }
+    }
 
     /// Does the task claim the terminal?
     pub fn task_is_interactive(&self, name: &str) -> bool {
@@ -134,6 +184,12 @@ impl App {
     /// Is a worktree started? `None` when the project has no `[status] up`: the notion
     /// of "state" does not exist then, which is not the same as stopped.
     pub fn is_up(&self, wt: &Worktree) -> Option<bool> {
+        // `@` runs as long as its `wt up @` does, whatever the project probes.
+        if state::is_main(&wt.slug) {
+            return Some(
+                crate::foreground::running(&crate::foreground::lock_path(&self.root)).is_some(),
+            );
+        }
         let cmd = self.project.config.status.up.as_ref()?;
         let vars = self.vars(&wt.slug, &wt.state);
         let cwd = if wt.path.is_dir() {
@@ -287,6 +343,12 @@ impl App {
     }
 
     fn require_existing(&self, slug: &str) -> Result<WtState> {
+        if state::is_main(slug) && !self.has_main() {
+            bail!(
+                "{}",
+                t!("err.no_main", path = self.project.config_path.display())
+            );
+        }
         if !self.dir(slug).is_dir() {
             bail!("worktree '{slug}' inconnu (voir: wt ls)");
         }
@@ -564,18 +626,14 @@ impl App {
     /// `WT_STOP_AFTER`, otherwise for as long as nobody stops it. Every start sets the
     /// deadline again.
     pub fn cmd_up_for(&self, slug: &str, sets: &[String], stop_after: Option<&str>) -> Result<()> {
+        if state::is_main(slug) {
+            return self.cmd_up_main(sets, stop_after);
+        }
         let mut st = self.require_existing(slug)?;
         // Given options add to the previous ones: a bare `wt up demo` repeats the last
         // start, and `--set queue=0` only resets that one key.
         st.opts.extend(parse_sets(sets)?);
-        let stop_after = match stop_after {
-            Some(d) => Some(d.to_string()),
-            None => std::env::var("WT_STOP_AFTER").ok(),
-        };
-        st.stop_at = match stop_after {
-            Some(d) => util::parse_duration(&d)?.map(|s| util::now() + s),
-            None => None,
-        };
+        st.stop_at = stop_deadline(stop_after)?;
         self.allocate_ports(slug, &mut st, Allocate::Up)?;
         state::save(&self.root, slug, &st)?;
 
@@ -602,6 +660,76 @@ impl App {
             self.out(format!("  {}", t!("info.stops_in", left = left)));
         }
         Ok(())
+    }
+
+    /// `wt up @`: the `[main] up` commands in the main repository, one after the other,
+    /// in the foreground. Returns when the last one ends or the run is stopped (Ctrl-C,
+    /// `wt down @`). Nothing of the worktrees' setup applies: no hook, no prompt.
+    fn cmd_up_main(&self, sets: &[String], stop_after: Option<&str>) -> Result<()> {
+        let mut st = self.require_existing(MAIN_SLUG)?;
+        let main = self
+            .project
+            .config
+            .main
+            .as_ref()
+            .expect("checked by require_existing");
+        if main.up.is_empty() {
+            bail!(
+                "{}",
+                t!("err.no_main_up", path = self.project.config_path.display())
+            );
+        }
+        let lock = crate::foreground::lock_path(&self.root);
+        let Some(mut running) = crate::foreground::Running::acquire(&lock)? else {
+            bail!("{}", t!("err.main_running"));
+        };
+
+        st.opts.extend(parse_sets(sets)?);
+        st.stop_at = stop_deadline(stop_after)?;
+        // `@` never goes through `new`: every port is allocated now.
+        self.allocate_ports(MAIN_SLUG, &mut st, Allocate::New)?;
+        self.allocate_ports(MAIN_SLUG, &mut st, Allocate::Up)?;
+        state::save(&self.root, MAIN_SLUG, &st)?;
+
+        // Before the command, which takes the terminal until it ends.
+        self.print_endpoints(MAIN_SLUG, &st);
+        if let Some(at) = st.stop_at {
+            let left = util::format_left(at.saturating_sub(util::now()));
+            self.out(format!("  {}", t!("info.stops_in", left = left)));
+        }
+
+        let vars = self.vars(MAIN_SLUG, &st);
+        let mut env = state::env(&vars);
+        for (name, value) in &main.env {
+            env.insert(name.clone(), tmpl::render(value, &vars));
+        }
+        let result = (|| {
+            for raw in &main.up.0 {
+                let cmd = tmpl::render(raw, &vars);
+                self.info(format!("up · {cmd}"));
+                let status = crate::foreground::run(&cmd, &self.project.main, &env, &mut running)?;
+                if crate::foreground::stopped(&status) {
+                    self.ok(t!("ok.main_stopped").to_string());
+                    return Ok(());
+                }
+                if !status.success() {
+                    bail!(
+                        "{}",
+                        t!(
+                            "err.command_failed",
+                            code = status.code().unwrap_or(-1),
+                            command = cmd
+                        )
+                    );
+                }
+            }
+            self.ok(t!("ok.main_ended").to_string());
+            Ok(())
+        })();
+        // The deadline was this run's.
+        let cleared = self.clear_stop_at(MAIN_SLUG);
+        drop(running);
+        result.and(cleared)
     }
 
     /// `wt keep <slug> <duration>`: the worktree may run that long from now; `never` lifts
@@ -656,6 +784,16 @@ impl App {
 
     pub fn cmd_down(&self, slug: &str) -> Result<()> {
         let st = self.require_existing(slug)?;
+        if state::is_main(slug) {
+            let stopped = crate::foreground::stop(&crate::foreground::lock_path(&self.root))?;
+            self.clear_stop_at(slug)?;
+            if stopped {
+                self.ok(t!("ok.stopped", slug = slug, kept = t!("label.kept_main")).to_string());
+            } else {
+                self.info(t!("info.main_not_running").to_string());
+            }
+            return Ok(());
+        }
         if !self.has_down() {
             self.warn(
                 t!(
@@ -688,6 +826,9 @@ impl App {
     // --------------------------------------------------------------------------------
 
     pub fn cmd_rm(&self, slug: &str, yes: bool) -> Result<()> {
+        if state::is_main(slug) {
+            bail!("{}", t!("err.main_not_removable"));
+        }
         let st = self.require_existing(slug)?;
         if !yes && !confirm(&t!("confirm.remove", slug = slug))? {
             bail!("{}", t!("err.cancelled"));
@@ -1247,6 +1388,9 @@ pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
 }
 
 pub fn validate_slug(slug: &str) -> Result<()> {
+    if state::is_main(slug) {
+        bail!("{}", t!("err.main_reserved"));
+    }
     let valid = !slug.is_empty()
         && slug
             .chars()
@@ -1270,6 +1414,19 @@ pub fn slugify(branch: &str) -> String {
         }
     }
     out.trim_matches('-').chars().take(40).collect()
+}
+
+/// When a start stops by itself: `--stop-after`, otherwise `WT_STOP_AFTER`, otherwise
+/// never.
+fn stop_deadline(stop_after: Option<&str>) -> Result<Option<u64>> {
+    let stop_after = match stop_after {
+        Some(d) => Some(d.to_string()),
+        None => std::env::var("WT_STOP_AFTER").ok(),
+    };
+    Ok(match stop_after {
+        Some(d) => util::parse_duration(&d)?.map(|s| util::now() + s),
+        None => None,
+    })
 }
 
 fn parse_sets(sets: &[String]) -> Result<BTreeMap<String, String>> {

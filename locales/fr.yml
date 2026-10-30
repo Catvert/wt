@@ -1,6 +1,13 @@
 _version: 1
 
 err:
+  no_main: "pas de [main] dans %{path} — le dépôt principal n'est pas un des worktrees"
+  no_main_up: "pas de [main] up dans %{path} — rien à lancer dans le dépôt principal"
+  main_running: "le dépôt principal est déjà démarré (wt down @ pour l'arrêter)"
+  main_no_group: "le dépôt principal est en train de démarrer, réessaie dans un instant"
+  main_still_running: "la commande du dépôt principal (groupe de processus %{group}) ne s'est pas arrêtée"
+  main_not_removable: "le dépôt principal ne se supprime pas"
+  main_reserved: "« @ » désigne le dépôt principal, pas un slug de worktree"
   bad_duration: "durée invalide « %{value} » (ex. 90m, 2h, 1h30m, 1d, never)"
   expired_failed: "%{failed} worktree(s) échu(s) n'ont pas pu être arrêtés"
   adopt_not_worktree: "%{path} n'est pas un worktree git de ce dépôt"
@@ -31,6 +38,7 @@ err:
   interactive_tty: "l'interface interactive a besoin d'un terminal (utilise une sous-commande dans un script)"
 
 label:
+  kept_main: "ports et état conservés"
   stop_at: "arrêt auto"
   url: "url"
   path: "chemin"
@@ -46,6 +54,8 @@ label:
   root: "racine"
 
 ok:
+  main_stopped: "dépôt principal arrêté"
+  main_ended: "dépôt principal : commande terminée"
   keep: "worktree '%{slug}' : arrêt automatique dans %{left}"
   keep_forever: "worktree '%{slug}' : sans arrêt automatique"
   adopted: "worktree '%{slug}' adopté : %{path}"
@@ -73,6 +83,7 @@ hint:
   no_shell_integration: "intégration shell absente — ajoute `eval \"$(wt shell-init %{shell})\"` à ton fichier rc, ou utilise `wt shell %{slug}`"
 
 info:
+  main_not_running: "le dépôt principal n'est pas démarré"
   stops_in: "arrêt automatique dans %{left} (wt keep pour le changer)"
   in: "dans %{left}"
   expired: "worktree '%{slug}' : arrêt automatique échu"

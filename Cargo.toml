@@ -24,6 +24,9 @@ cli = ["dep:clap", "dep:clap_complete", "dep:ratatui", "dep:skim"]
 
 [dependencies]
 anyhow = "1"
+# `wt up @` runs a command in the foreground: its own process group, the terminal handed
+# over, signals passed on (src/foreground.rs). Nothing std exposes.
+libc = "0.2"
 clap = { version = "4", features = ["derive"], optional = true }
 # Dynamic completions: the candidates for a slug or a task can only come from the
 # project at hand, which a script generated at install time cannot know. The feature

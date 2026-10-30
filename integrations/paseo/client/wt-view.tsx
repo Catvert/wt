@@ -79,11 +79,15 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
   const project = data.project!;
   const w = data.worktree!;
   const detail = data.detail;
+  // `@`, le dépôt principal : sa commande [main] up, au premier plan dans un terminal Paseo
+  // jusqu'à son arrêt. Les hooks des worktrees ne s'y appliquent pas.
+  const canUp = w.main || project.has_up;
+  const canDown = w.main || project.has_down;
 
   // Les questions de `wt up` posées ici, dans le popover comme dans le panneau : la réponse
   // enregistrée du worktree, à défaut le défaut du wt.toml. « Démarrer » les passe toutes en
-  // --set ; wt les enregistre et ne les redemande pas.
-  const prompts = upPrompts(project);
+  // --set ; wt les enregistre et ne les redemande pas. `@` n'en a pas.
+  const prompts = w.main ? [] : upPrompts(project);
   const stored = (p: WtPrompt) => w.opts[p.name] ?? p.default ?? "";
   const value = (p: WtPrompt) => edits[p.name] ?? stored(p);
   const dirty = prompts.some((p) => edits[p.name] !== undefined && !sameAnswer(p, edits[p.name], stored(p)));
@@ -96,7 +100,8 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
   ];
   const up = () => {
     setEdits({});
-    void inTerminal("wt up", upArgs);
+    // Le terminal de `@` reste ouvert tant que sa commande tourne : il porte son nom.
+    void inTerminal(w.main ? "wt up @" : "wt up", upArgs);
   };
 
   const terminal = async (name: string, command: string, args: string[], close = true) => {
@@ -107,7 +112,7 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
   // Dans un terminal Paseo : les [[prompt]] de wt ont un vrai pty, et la sortie reste visible.
   const inTerminal = (name: string, args: string[], close = true) =>
     terminal(name, "wt", ["-C", project.main, ...args], close);
-  const start = startTask(project);
+  const start = startTask(project, w);
   const startTerminal = start ? terminals.data?.find((t) => t.name === `wt run ${start.name}`) : undefined;
   const reachable = (url: string) => data.reachable[url];
   const open = (url: string, inPaseo: boolean) => {
@@ -124,20 +129,22 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
   return (
     <View style={s.root}>
       <View style={s.row}>
-        <Text style={[s.title, { flex: 1 }]} numberOfLines={1}>{w.slug}</Text>
+        <Text style={[s.title, { flex: 1 }]} numberOfLines={1}>{w.main ? `${project.name} · dépôt principal` : w.slug}</Text>
         {startedAt !== null ? <Text style={s.muted}>démarrage…</Text> : <State s={s} theme={theme} running={data.running} />}
       </View>
       <Text style={s.muted} numberOfLines={1}>{w.branch}</Text>
 
       <View style={[s.row, { flexWrap: "wrap" }]}>
-        {project.has_up && !data.running ? (
-          <Button s={s} primary onPress={up}>▶ Démarrer (wt up)</Button>
+        {canUp && !data.running ? (
+          <Button s={s} primary onPress={up}>{w.main ? "▶ Démarrer (wt up @)" : "▶ Démarrer (wt up)"}</Button>
         ) : null}
-        {project.has_up && data.running && dirty ? (
+        {canUp && data.running && dirty ? (
           <Button s={s} primary onPress={up}>↻ Appliquer (wt up)</Button>
         ) : null}
-        {project.has_down && data.running ? (
-          <Button s={s} onPress={() => void inTerminal("wt down", ["down", w.slug])}>■ Arrêter (wt down)</Button>
+        {canDown && data.running ? (
+          <Button s={s} onPress={() => void inTerminal("wt down", ["down", w.slug])}>
+            {w.main ? "■ Arrêter (wt down @)" : "■ Arrêter (wt down)"}
+          </Button>
         ) : null}
         {start && startTerminal ? (
           <Button s={s} onPress={() => void paseo.terminals.ref(startTerminal.id).kill().then(() => terminals.refetch())}>
@@ -196,7 +203,7 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
           ))}
         </View>
       ) : null}
-      {autoStop && project.has_up ? (
+      {autoStop && canUp ? (
         <View style={[s.row, { flexWrap: "wrap" }]}>
           <Text style={s.muted}>
             {!data.running
@@ -229,7 +236,7 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
       {start && !startTerminal && data.running ? (
         <Text style={s.muted}>Lancé hors du plugin (script Paseo ou terminal) : arrêtez-le là-bas.</Text>
       ) : null}
-      {!project.has_up && !start && data.running === false ? (
+      {!canUp && !start && data.running === false ? (
         <Text style={s.muted}>Rien n'écoute sur ses ports, et le wt.toml ne dit pas comment le démarrer.</Text>
       ) : null}
 

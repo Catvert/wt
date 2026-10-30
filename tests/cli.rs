@@ -770,3 +770,134 @@ up = "test -f .up"
     let bad = wt(dir).args(["keep", "demo", "2x"]).output().unwrap();
     assert!(!bad.status.success());
 }
+
+#[test]
+fn the_main_repository_is_a_worktree_only_with_a_main_table() {
+    let project = project("[ports.web]\nbase = 4100\n");
+    let dir = project.path();
+    let out = wt(dir).args(["up", "@"]).output().unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no [main]"));
+    let ls: serde_json::Value =
+        serde_json::from_slice(&wt(dir).args(["ls", "--json"]).output().unwrap().stdout).unwrap();
+    assert_eq!(ls, serde_json::json!([]));
+}
+
+#[test]
+fn main_repository_lifecycle() {
+    let project = project(
+        r#"
+[ports.web]
+base = 4200
+
+[vars]
+host = "{{slug}}.localhost"
+
+[main]
+up = ["echo \"$WT_SLUG $WT_IS_MAIN $PORT $WT_HOST\" > ran.txt"]
+
+[main.vars]
+host = "main.localhost"
+
+[main.env]
+PORT = "{{port.web}}"
+"#,
+    );
+    let dir = project.path();
+    let ls = || -> serde_json::Value {
+        serde_json::from_slice(&wt(dir).args(["ls", "--json"]).output().unwrap().stdout).unwrap()
+    };
+    assert_eq!(ls()[0]["slug"], "@");
+    assert_eq!(ls()[0]["main"], true);
+    assert_eq!(ls()[0]["up"], false);
+
+    // Run from the main repository, a bare `wt up` is about `@`.
+    let out = wt(dir).arg("up").output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(dir.join("ran.txt")).unwrap(),
+        "@ 1 4200 main.localhost\n"
+    );
+    assert_eq!(ls()[0]["ports"]["web"], 4200);
+    assert_eq!(ls()[0]["up"], false);
+
+    // The worktrees keep clear of its port, and are never it.
+    assert!(wt(dir)
+        .args(["new", "demo"])
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let out = wt(dir).args(["up", "demo"]).output().unwrap();
+    assert!(out.status.success());
+    assert_eq!(ls()[1]["slug"], "demo");
+    assert_eq!(ls()[1]["main"], false);
+    assert_eq!(ls()[1]["ports"]["web"], 4201);
+    assert!(!dir.join("../").join("ran.txt").exists());
+
+    // From inside a worktree, a bare command is about that worktree.
+    let demo = ls()[1]["checkout"].as_str().unwrap().to_string();
+    let out = wt(Path::new(&demo)).arg("path").output().unwrap();
+    assert_eq!(stdout(&out).trim(), Path::new(&demo).display().to_string());
+    let out = wt(dir).arg("path").output().unwrap();
+    assert_eq!(stdout(&out).trim(), dir.display().to_string());
+
+    for args in [&["rm", "@", "-y"][..], &["new", "@"][..]] {
+        let out = wt(dir).args(args).output().unwrap();
+        assert!(!out.status.success(), "{args:?}");
+    }
+    let out = wt(dir).args(["down", "@"]).output().unwrap();
+    assert!(out.status.success());
+    assert!(stdout(&out).contains("not started"), "{}", stdout(&out));
+    wt(dir).args(["rm", "demo", "-y"]).output().unwrap();
+}
+
+#[test]
+fn main_repository_runs_until_stopped() {
+    let project = project(
+        r#"
+[main]
+up = ["sleep 30 & sleep 30; echo never > after.txt", "echo never > next.txt"]
+"#,
+    );
+    let dir = project.path();
+    let up = || -> serde_json::Value {
+        let out = wt(dir).args(["ls", "--json"]).output().unwrap();
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()[0]["up"].clone()
+    };
+    let mut running = wt(dir)
+        .args(["up", "@", "--stop-after", "2h"])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while up() != true {
+        assert!(std::time::Instant::now() < deadline, "never started");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    // Only one at a time.
+    let again = wt(dir).args(["up", "@"]).output().unwrap();
+    assert!(!again.status.success());
+    assert!(String::from_utf8_lossy(&again.stderr).contains("already started"));
+
+    let down = wt(dir).args(["down", "@"]).output().unwrap();
+    assert!(
+        down.status.success(),
+        "{}",
+        String::from_utf8_lossy(&down.stderr)
+    );
+    let status = running.wait().unwrap();
+    assert!(status.success());
+    assert_eq!(up(), false);
+    // Stopped is stopped: neither the rest of the command nor the next one ran.
+    assert!(!dir.join("after.txt").exists());
+    assert!(!dir.join("next.txt").exists());
+    let ls: serde_json::Value =
+        serde_json::from_slice(&wt(dir).args(["ls", "--json"]).output().unwrap().stdout).unwrap();
+    assert_eq!(ls[0]["stop_at"], serde_json::Value::Null);
+}

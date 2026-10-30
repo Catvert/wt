@@ -27,7 +27,7 @@ pub fn normalize(path: &Path) -> PathBuf {
     out
 }
 
-fn shell() -> String {
+pub(crate) fn shell() -> String {
     // The user's shell may be fish or nu, whose syntax is not what hooks expect.
     // `sh` is the contract.
     std::env::var("WT_SHELL").unwrap_or_else(|_| "sh".to_string())

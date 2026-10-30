@@ -48,6 +48,10 @@ pub struct Config {
     #[serde(default)]
     pub hooks: Hooks,
 
+    /// The main repository as a worktree of its own, `@`: what `wt up @` runs there.
+    /// Absent, the main repository is not one of the worktrees.
+    pub main: Option<MainCheckout>,
+
     /// Ad-hoc commands: `wt run <name> <slug>`.
     #[serde(default)]
     pub tasks: BTreeMap<String, Task>,
@@ -238,6 +242,28 @@ pub struct Hooks {
     /// After removal (the directory is gone, cwd = main repository).
     #[serde(default)]
     pub post_rm: Commands,
+}
+
+/// `[main]`: the main repository started like a worktree, under the slug `@`.
+///
+/// It is not a worktree, and none of the worktree hooks apply: `post_new` and `pre_rm`
+/// would set it up or tear it down (its `.env` is what the worktrees copy, its databases
+/// are the shared ones). What it gets is its own command — usually the project's daily
+/// one, `composer run dev` or `npm run dev` — with ports allocated like any worktree's.
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct MainCheckout {
+    /// `wt up @`: run in the foreground until it ends, Ctrl-C, or `wt down @`.
+    #[serde(default)]
+    pub up: Commands,
+    /// Override `[vars]` for `@`: a `host = "{{slug}}.localhost"` has no meaning there.
+    #[serde(default)]
+    pub vars: BTreeMap<String, String>,
+    /// Environment of the command, values templated (`SERVER_PORT = "{{port.http}}"`).
+    /// The variables an application reads are passed this way rather than written to the
+    /// main repository's `.env`, which the worktrees copy.
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -535,5 +561,24 @@ args = ["--log-file", "/tmp/ra.log"]
         assert!(c.hooks.up.is_empty());
         assert!(c.open.url.is_none());
         assert!(c.status.up.is_none());
+        assert!(c.main.is_none());
+    }
+
+    #[test]
+    fn main_checkout_takes_one_command_or_several() {
+        let c: Config = toml::from_str(
+            r#"
+[main]
+up = "npm run dev"
+
+[main.env]
+PORT = "{{port.web}}"
+"#,
+        )
+        .unwrap();
+        let main = c.main.unwrap();
+        assert_eq!(main.up.0, ["npm run dev"]);
+        assert_eq!(main.env["PORT"], "{{port.web}}");
+        assert!(main.vars.is_empty());
     }
 }

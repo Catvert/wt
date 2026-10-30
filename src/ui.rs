@@ -640,10 +640,10 @@ impl Ui {
             t!("key.actions").to_string(),
             t!("key.new").to_string(),
         ];
-        if self.app.has_up() {
+        if self.app.has_up() || self.app.has_up_for(crate::state::MAIN_SLUG) {
             s.push(t!("key.start").to_string());
         }
-        if self.app.has_down() {
+        if self.app.has_down() || self.app.has_down_for(crate::state::MAIN_SLUG) {
             s.push(t!("key.stop").to_string());
         }
         s.push(t!("key.shell").to_string());
@@ -885,10 +885,10 @@ impl Ui {
 
     fn draw_help(&self, f: &mut Frame) {
         let mut lines = vec![t!("help.new").to_string()];
-        if self.app.has_up() {
+        if self.app.has_up() || self.app.has_up_for(crate::state::MAIN_SLUG) {
             lines.push(t!("help.start").to_string());
         }
-        if self.app.has_down() {
+        if self.app.has_down() || self.app.has_down_for(crate::state::MAIN_SLUG) {
             lines.push(t!("help.stop").to_string());
         }
         // What `c` does depends on the machine: promising a terminal back after `exit`
@@ -1394,14 +1394,14 @@ impl Ui {
             KeyCode::Char('n') => self.open_branch_picker(),
             KeyCode::Enter => self.open_action_menu(),
             KeyCode::Char('s') => {
-                if !self.app.has_up() {
+                if !slug.as_deref().is_some_and(|s| self.app.has_up_for(s)) {
                     self.message = Some(t!("ui.no_services").to_string());
                 } else if let Some(s) = slug {
                     self.start(PendingAction::Up, s, term)?;
                 }
             }
             KeyCode::Char('S') => {
-                if !self.app.has_up() {
+                if !slug.as_deref().is_some_and(|s| self.app.has_up_for(s)) {
                     self.message = Some(t!("ui.no_services").to_string());
                 } else if let Some(s) = slug {
                     self.mode = Mode::Input {
@@ -1412,7 +1412,7 @@ impl Ui {
                 }
             }
             KeyCode::Char('d') => {
-                if !self.app.has_down() {
+                if !slug.as_deref().is_some_and(|s| self.app.has_down_for(s)) {
                     self.message = Some(t!("ui.nothing_to_stop").to_string());
                 } else if let Some(s) = slug {
                     let title = t!("title.stopping", slug = s).to_string();
@@ -1469,6 +1469,8 @@ impl Ui {
         let known = crate::state::load(&self.app.root, &slug).opts;
         let queue = match &action {
             PendingAction::Task { task } => self.app.task_prompts(task).into(),
+            // The project's questions are about its worktrees' setup: `@` has none.
+            PendingAction::Up if crate::state::is_main(&slug) => Default::default(),
             _ => self.app.prompts_for(phase, &known).into(),
         };
         self.pending = Some(Pending {
@@ -1537,6 +1539,11 @@ impl Ui {
                 self.spawn_then(title, follow, move |app| {
                     app.cmd_new(&slug, branch.as_deref(), from.as_deref(), &sets)
                 });
+            }
+            // `@` runs in the foreground until stopped: it takes the terminal, as an
+            // interactive task does, and Ctrl-C brings the interface back.
+            PendingAction::Up if crate::state::is_main(&slug) => {
+                self.exec(term, |app| app.cmd_up(&slug, &sets))?;
             }
             PendingAction::Up => {
                 let title = t!("title.starting", slug = slug).to_string();
@@ -1658,17 +1665,24 @@ impl Ui {
     /// The menu only lists what the wt.toml declared: offering "start" to a project
     /// without services would only lead to an error.
     fn open_action_menu(&mut self) {
+        let slug = self.current().map(|r| r.slug.clone()).unwrap_or_default();
+        let main = crate::state::is_main(&slug);
         let mut items = vec![choice("new", &t!("action.new"), "")];
-        if self.app.has_up() {
-            items.push(choice("up", &t!("action.start"), "hooks up"));
+        if self.app.has_up_for(&slug) {
+            let detail = if main { "[main] up" } else { "hooks up" };
+            items.push(choice("up", &t!("action.start"), detail));
             items.push(choice(
                 "up-opts",
                 &t!("action.start_opts"),
                 "--set key=value",
             ));
         }
-        if self.app.has_down() {
-            items.push(choice("down", &t!("action.stop"), "hooks down"));
+        if self.app.has_down_for(&slug) {
+            items.push(choice(
+                "down",
+                &t!("action.stop"),
+                if main { "" } else { "hooks down" },
+            ));
         }
         items.push(choice(
             "shell",
@@ -1686,11 +1700,13 @@ impl Ui {
         if self.app.has_tasks() {
             items.push(choice("task", &t!("action.task"), "wt.toml [tasks]"));
         }
-        items.push(choice(
-            "rm",
-            &t!("action.remove"),
-            &t!("action.remove_detail"),
-        ));
+        if !main {
+            items.push(choice(
+                "rm",
+                &t!("action.remove"),
+                &t!("action.remove_detail"),
+            ));
+        }
         self.mode = Mode::Pick(Picker::new(
             t!("ui.actions").to_string(),
             items,

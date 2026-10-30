@@ -26,6 +26,8 @@ pub struct ProjectJson {
     pub has_status: bool,
     pub has_ports: bool,
     pub has_open: bool,
+    /// The main repository is one of the worktrees, `@` (a `[main]` in the wt.toml).
+    pub has_main: bool,
     pub tasks: Vec<TaskJson>,
     /// The `[[prompt]]` questions, so a consumer can ask them in its own UI and pass the
     /// answers with `--set`. Computed choices (`source`) are not run here: `has_source` says a
@@ -60,6 +62,8 @@ pub struct TaskJson {
 #[derive(Serialize)]
 pub struct WorktreeJson {
     pub slug: String,
+    /// The main repository (`@`): no `wt rm`, a foreground `wt up`.
+    pub main: bool,
     /// `<root>/<slug>`: a directory, or a link for an adopted checkout.
     pub dir: PathBuf,
     /// Where the checkout really is: the adopted path, otherwise `dir`.
@@ -106,6 +110,7 @@ pub fn project(app: &App) -> ProjectJson {
         has_status: app.has_status(),
         has_ports: app.has_ports(),
         has_open: app.has_open(),
+        has_main: app.has_main(),
         tasks: tasks(app),
         prompts: app
             .project
@@ -145,6 +150,7 @@ pub fn worktree(app: &App, wt: &Worktree) -> WorktreeJson {
     let checkout = state::checkout(&wt.path, &wt.state);
     WorktreeJson {
         slug: wt.slug.clone(),
+        main: state::is_main(&wt.slug),
         dir: wt.path.clone(),
         adopted: checkout != wt.path,
         branch: crate::git::current_branch(&wt.path),

@@ -66,7 +66,8 @@ export async function getInfo({ directory, detail }: { directory: string; detail
   };
   const project: WtProject | null = await wt.root(directory);
   if (!project) return base;
-  if ((await real(directory)) === (await real(project.main))) return { ...base, kind: "main", project };
+  // Avec un [main], le dépôt principal est `@`, que `wt ls` donne comme les worktrees.
+  if (!project.has_main && (await real(directory)) === (await real(project.main))) return { ...base, kind: "main", project };
   const worktree = await findWorktree(await wt.ls(project.main), directory);
   if (!worktree) return { ...base, kind: adopting.has(directory) ? "adopting" : "unmanaged", project };
   const [show, proxy] = await Promise.all([

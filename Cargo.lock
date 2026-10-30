@@ -2834,6 +2834,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "clap_complete",
+ "libc",
  "ratatui",
  "rust-i18n",
  "serde",

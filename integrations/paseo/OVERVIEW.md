@@ -34,6 +34,10 @@ its ports, copies, dependencies and hooks, and knows its addresses.
   the daemon has `WT_WEB_EDITOR_URL` (`{path}` stands for the checkout, URL-encoded: for
   example openvscode-server's `https://code.example/?folder={path}`), and **lazygit** in a
   Paseo terminal of the workspace, when it is on the daemon's `PATH`.
+- **Main repository.** When the `wt.toml` has a `[main]`, the main repository's workspace
+  is the worktree `@`: same button, panel and addresses, no start-up questions. Start runs
+  `wt up @` in a Paseo terminal named after it, where its command stays in the foreground;
+  Stop runs `wt down @`, and closing that terminal stops it too.
 - **Terminals.** `wt up`, `wt down` and every task run in a Paseo terminal of the
   workspace, so `[[prompt]]` questions can be answered and the output stays visible.
 - **Cleanup.** When a workspace is archived, the plugin waits for Paseo to delete the

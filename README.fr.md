@@ -124,6 +124,7 @@ wt pick                 # sélecteur fuzzy : worktree, puis action
 | `wt new <slug> [branche] [--from ref] [--set k=v]` | checkout + dossiers + copies + hooks `post_new` |
 | `wt new <slug> --adopt <chemin> [--set k=v]` | idem, pour un worktree git déjà créé par un autre outil (voir plus bas) |
 | `wt up [slug] [--set k=v] [--stop-after 8h]` | hooks `up` (et allocation des ports, s'il y en a) ; `--stop-after` (défaut `WT_STOP_AFTER`) fixe un arrêt automatique |
+| `wt up @` | le `[main] up` du repo principal, au premier plan (voir plus bas) |
 | `wt down [slug]` | hooks `down` — le checkout et l'état sont conservés |
 | `wt down --expired` | arrête les worktrees dont l'arrêt automatique est échu — pour un minuteur (systemd, cron) |
 | `wt keep <slug> <2h\|never>` | déplace l'arrêt automatique : dans cette durée, ou jamais |
@@ -141,6 +142,11 @@ wt pick                 # sélecteur fuzzy : worktree, puis action
 
 `wt` fonctionne depuis le repo principal **comme depuis un worktree** : la configuration
 est toujours celle du repo principal, pas celle de la branche en cours de checkout.
+
+Sans slug, `up`, `down`, `show`, `ide`, `open`, `run` et `path` portent sur le worktree
+du dossier courant — ou sur le repo principal, `@`, quand le `wt.toml` a un `[main]` :
+`wt up` là où l'on travaille démarre ce qui s'y trouve. `rm`, `shell` et `cd` gardent le
+menu, comme toute commande lancée hors d'un checkout.
 
 Quand une sous-commande omet une valeur que wt sait énumérer, Skim la demande :
 `wt open`, par exemple, ouvre le sélecteur de worktree ; `wt run` demande la tâche puis
@@ -214,6 +220,42 @@ préparation de l'outil, il rend ses worktrees utilisables dès leur création.
   checkout, le lien pointe dans le vide et `wt gc` traite l'entrée comme orpheline : hooks de
   suppression, puis le lien et l'état disparaissent (voir [docs/gc.md](docs/gc.md)).
 
+### Le repo principal (`@`)
+
+Avec une table `[main]`, le repo principal est l'un des worktrees, sous le slug `@` :
+listé en premier par `wt ls` et le tableau de bord, démarré par `wt up @` (ou un simple
+`wt up` depuis lui), arrêté par `wt down @`. Ce qu'il lance lui est propre — d'ordinaire
+la commande quotidienne du projet — car aucun hook des worktrees ne s'y applique :
+`post_new` et `pre_rm` installeraient ou détruiraient ce que les worktrees copient et
+partagent (son `.env`, ses bases).
+
+```toml
+[main]
+up = "composer run dev"
+
+# [vars] redéfinies pour `@` : un `host = "{{slug}}.localhost"` n'y a pas de sens.
+[main.vars]
+host = "localhost"
+
+# Environnement de la commande. L'application y lit ses ports plutôt que dans un `.env`
+# que les worktrees copieraient.
+[main.env]
+SERVER_PORT = "{{port.http}}"
+VITE_PORT = "{{port.vite}}"
+```
+
+- `wt up @` alloue tous les `[ports]`, depuis les mêmes bases que les worktrees, qui les
+  évitent. Les questions `[[prompt]]` du projet ne sont pas posées.
+- La commande tourne **au premier plan** et a le terminal : Ctrl-C l'arrête, comme la
+  fermeture du terminal et `wt down @` lancé d'ailleurs — tout son groupe de processus,
+  rien ne reste à tenir un port. Plusieurs commandes s'enchaînent ; un arrêt met fin au
+  tout.
+- `@` est démarré tant que son `wt up @` tourne (un verrou dans `<racine>/.wt`, relâché
+  quelle que soit la fin), quoi que dise `[status] up`. `--stop-after` et `wt keep @`
+  s'appliquent.
+- `wt new @`, `wt rm @` et `wt gc` n'y touchent jamais. Dans les hooks et les tâches,
+  `{{is_main}}` / `$WT_IS_MAIN` vaut `1` pour `@`.
+
 ### Sortie lisible par une machine (`--json`)
 
 Un outil qui pilote `wt` de l'extérieur — une interface d'agents, un éditeur, un script —
@@ -222,10 +264,10 @@ n'a pas à analyser un texte aligné, coloré et traduit. `wt ls`, `wt show`, `w
 
 | Commande | Sortie |
 |---|---|
-| `wt ls --json` | `[{slug, dir, checkout, adopted, branch, up, ports, opts, url}]` |
+| `wt ls --json` | `[{slug, main, dir, checkout, adopted, branch, up, ports, opts, url}]` |
 | `wt show <slug> --json` | le même objet, plus `commit`, `info` (sondes `[status.info]`), `changes` (lignes de `git status --short`) et `links` |
 | `wt open <slug> --list --json` | `[{url, label}]` ; une liste vide plutôt qu'une erreur quand il n'y a rien à ouvrir |
-| `wt root --json` | `{name, config, main, root, has_up, has_down, has_status, has_ports, has_open, tasks}` |
+| `wt root --json` | `{name, config, main, root, has_up, has_down, has_status, has_ports, has_open, has_main, tasks}` |
 | `wt tasks --json` | `[{name, description, interactive}]` |
 
 `checkout` est l'endroit où sont vraiment les fichiers — le chemin adopté pour un worktree
@@ -466,6 +508,7 @@ longue extension l'emporte — appartient là où les fichiers s'ouvrent.
 | Variable | Valeur |
 |---|---|
 | `{{slug}}` `{{branch}}` `{{path}}` | le worktree |
+| `{{is_main}}` | `1` pour le repo principal (`@`), `0` sinon |
 | `{{main}}` `{{root}}` `{{repo}}` `{{project}}` | le projet |
 | `{{port.<nom>}}` | port alloué pour `[ports.<nom>]` (si le projet en déclare) |
 | `{{opt.<nom>}}` | option passée en `--set <nom>=<valeur>` |

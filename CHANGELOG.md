@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The main repository as a worktree, `@`, with a `[main]` table: `wt up @` runs its own
+  command (`[main] up`, usually the project's daily one) in the foreground, with every
+  `[ports]` entry allocated like a worktree's, `[main.vars]` overriding `[vars]` and
+  `[main.env]` passed to it. Ctrl-C, closing the terminal or `wt down @` stops its whole
+  process group; it is started for as long as `wt up @` runs. None of the worktree hooks
+  apply, `wt new/rm/gc` never touch it; `{{is_main}}` / `$WT_IS_MAIN` tells it apart.
+  `main` in `wt ls --json`, `has_main` in `wt root --json`.
+
 - Automatic stop: `wt up --stop-after 8h` (default `WT_STOP_AFTER`) records a deadline,
   `wt keep <slug> <duration|never>` moves it, and `wt down --expired`, run by a timer, stops
   the worktrees past theirs. `stop_at` (Unix seconds) in `--json`; `wt down` clears it. A
@@ -31,6 +39,12 @@ All notable changes to this project are documented here. The format follows
 - Paseo plugin: a **VS Code** button opens the worktree in a web editor (`WT_WEB_EDITOR_URL`
   on the daemon, `{path}` for the checkout), and a **lazygit** button runs lazygit on it in a
   Paseo terminal.
+
+### Changed
+
+- Without a slug, `up`, `down`, `show`, `ide`, `open`, `run` and `path` take the worktree
+  of the current directory (`@` in the main repository, with a `[main]`) before opening the
+  menu. `rm`, `shell` and `cd` still ask.
 
 ### Fixed
 

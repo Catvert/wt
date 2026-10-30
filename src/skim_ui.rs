@@ -82,7 +82,12 @@ pub fn run(app: &App) -> Result<()> {
         return create(app);
     }
 
-    let Some(action) = pick_one(t!("ui.actions").as_ref(), action_choices(app), None)? else {
+    let Some(action) = pick_one(
+        t!("ui.actions").as_ref(),
+        action_choices(app, &target),
+        None,
+    )?
+    else {
         return Ok(());
     };
     dispatch(app, &target, &action)
@@ -166,9 +171,10 @@ pub fn choose_task(app: &App) -> Result<Option<String>> {
     pick_one(t!("ui.task").as_ref(), choices, None)
 }
 
-fn action_choices(app: &App) -> Vec<Choice> {
+fn action_choices(app: &App, slug: &str) -> Vec<Choice> {
+    let main = crate::state::is_main(slug);
     let mut items = Vec::new();
-    if app.has_up() {
+    if app.has_up_for(slug) {
         items.push(Choice::new(
             "up",
             action_label(t!("action.start")),
@@ -180,7 +186,7 @@ fn action_choices(app: &App) -> Vec<Choice> {
             "--set key=value",
         ));
     }
-    if app.has_down() {
+    if app.has_down_for(slug) {
         items.push(Choice::new(
             "down",
             action_label(t!("action.stop")),
@@ -203,11 +209,13 @@ fn action_choices(app: &App) -> Vec<Choice> {
             "wt.toml [tasks]",
         ));
     }
-    items.push(Choice::new(
-        "rm",
-        action_label(t!("action.remove")),
-        t!("action.remove_detail"),
-    ));
+    if !main {
+        items.push(Choice::new(
+            "rm",
+            action_label(t!("action.remove")),
+            t!("action.remove_detail"),
+        ));
+    }
     items
 }
 
@@ -224,6 +232,8 @@ fn action_label(label: impl AsRef<str>) -> String {
 
 fn dispatch(app: &App, slug: &str, action: &str) -> Result<()> {
     match action {
+        // The project's questions are about its worktrees' setup: `@` has none.
+        "up" if crate::state::is_main(slug) => app.cmd_up(slug, &[]),
         "up" => {
             let Some(sets) = phase_options(app, Ask::Up, slug)? else {
                 return Ok(());
@@ -637,7 +647,7 @@ mod tests {
         };
         let app = App::new(project).unwrap();
 
-        let keys = action_choices(&app)
+        let keys = action_choices(&app, "demo")
             .into_iter()
             .map(|choice| choice.key)
             .collect::<Vec<_>>();

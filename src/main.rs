@@ -81,7 +81,10 @@ enum Cmd {
         #[arg(long = "set", value_name = "KEY=VALUE")]
         set: Vec<String>,
     },
-    /// Starts a worktree (up hooks).
+    /// Starts a worktree (up hooks), or the main repository (`@`, its `[main] up`).
+    ///
+    /// Without a slug: the worktree of the current directory, `@` in the main
+    /// repository, otherwise a menu. The same goes for down, show, ide, open, run, path.
     Up {
         #[arg(add = complete::slugs())]
         slug: Option<String>,
@@ -297,12 +300,12 @@ fn try_main() -> Result<()> {
             set,
             stop_after,
         }) => {
-            let slug = selected_slug(&app, slug)?;
+            let slug = slug_here(&app, slug, &start)?;
             app.cmd_up_for(&slug, &set, stop_after.as_deref())
         }
         Some(Cmd::Down { expired: true, .. }) => app.cmd_down_expired(),
         Some(Cmd::Down { slug, .. }) => {
-            let slug = selected_slug(&app, slug)?;
+            let slug = slug_here(&app, slug, &start)?;
             app.cmd_down(&slug)
         }
         Some(Cmd::Keep { slug, duration }) => app.cmd_keep(&slug, &duration),
@@ -316,7 +319,7 @@ fn try_main() -> Result<()> {
         Some(Cmd::Tui) => ui::run(Arc::clone(&app)),
         Some(Cmd::Pick) => skim_ui::run(&app),
         Some(Cmd::Show { slug, json }) => {
-            let slug = selected_slug(&app, slug)?;
+            let slug = slug_here(&app, slug, &start)?;
             let wt = app
                 .list()
                 .into_iter()
@@ -354,13 +357,13 @@ fn try_main() -> Result<()> {
             }
         },
         Some(Cmd::Ide { slug, editor }) => {
-            let slug = selected_slug(&app, slug)?;
+            let slug = slug_here(&app, slug, &start)?;
             app.cmd_ide(&slug, editor.as_deref())
         }
         Some(Cmd::Open {
             slug, json: true, ..
         }) => {
-            let slug = selected_slug(&app, slug)?;
+            let slug = slug_here(&app, slug, &start)?;
             let wt = app
                 .list()
                 .into_iter()
@@ -372,18 +375,18 @@ fn try_main() -> Result<()> {
         Some(Cmd::Open {
             slug, target, list, ..
         }) => {
-            let slug = selected_slug(&app, slug)?;
+            let slug = slug_here(&app, slug, &start)?;
             app.cmd_open(&slug, target.as_deref(), list)
         }
         Some(Cmd::Run { task, slug, args }) => {
             let task = selected_task(&app, task)?;
-            let slug = selected_slug(&app, slug)?;
+            let slug = slug_here(&app, slug, &start)?;
             app.cmd_run(&task, &slug, &args)
         }
         Some(Cmd::Tasks { json: true }) => json::print(&json::tasks(&app)),
         Some(Cmd::Tasks { json: false }) => app.cmd_tasks(),
         Some(Cmd::Path { slug }) => {
-            let slug = selected_slug(&app, slug)?;
+            let slug = slug_here(&app, slug, &start)?;
             println!("{}", app.dir(&slug).display());
             Ok(())
         }
@@ -401,6 +404,18 @@ fn try_main() -> Result<()> {
     }
 }
 
+/// Like `selected_slug`, but a command run from inside a worktree — or from the main
+/// repository, `@`, when the wt.toml has a `[main]` — is about that one: `wt up` where
+/// one works starts what is there. Elsewhere, the menu.
+fn slug_here(app: &App, slug: Option<String>, start: &std::path::Path) -> Result<String> {
+    match slug.or_else(|| app.slug_at(start)) {
+        Some(slug) => Ok(slug),
+        None => selected_slug(app, None),
+    }
+}
+
+/// `rm`, `shell` and `cd` keep the menu: deleting the worktree one stands in, or going
+/// where one already is, is never what a bare command means.
 fn selected_slug(app: &App, slug: Option<String>) -> Result<String> {
     match slug {
         Some(slug) => Ok(slug),

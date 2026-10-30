@@ -16,6 +16,14 @@ use crate::tmpl::Vars;
 
 pub const STATE_DIR: &str = ".wt";
 
+/// The main repository, when the wt.toml has a `[main]`. Not a valid slug, so no
+/// worktree can take it and `wt gc` never sees its state.
+pub const MAIN_SLUG: &str = "@";
+
+pub fn is_main(slug: &str) -> bool {
+    slug == MAIN_SLUG
+}
+
 /// Written by `wt new` since `wt gc` exists. A state carrying it recorded its options from
 /// the start, so an empty option set really means "no option". States written before
 /// (no `format` key, read as 0) are trusted only when they hold options: see `wt gc`.
@@ -166,13 +174,18 @@ pub fn list(root: &Path) -> Vec<Worktree> {
     out
 }
 
-/// Ports already reserved by other worktrees, stopped ones included.
+/// Ports already reserved by other worktrees, stopped ones included, and by the main
+/// repository's `@`, which has no directory under the root.
 pub fn reserved_ports(root: &Path, except: &str) -> Vec<u16> {
-    list(root)
+    let mut ports: Vec<u16> = list(root)
         .into_iter()
         .filter(|w| w.slug != except)
         .flat_map(|w| w.state.ports.into_values())
-        .collect()
+        .collect();
+    if !is_main(except) {
+        ports.extend(load(root, MAIN_SLUG).ports.into_values());
+    }
+    ports
 }
 
 /// Variables available to wt.toml templates.
@@ -185,7 +198,17 @@ pub fn vars(project: &Project, root: &Path, slug: &str, state: &WtState) -> Vars
     v.insert("branch".into(), state.branch.clone());
     v.insert("main".into(), project.main.display().to_string());
     v.insert("root".into(), root.display().to_string());
-    v.insert("path".into(), root.join(slug).display().to_string());
+    let path = if is_main(slug) {
+        project.main.clone()
+    } else {
+        root.join(slug)
+    };
+    v.insert("path".into(), path.display().to_string());
+    // `{{is_main}}` / `$WT_IS_MAIN`: a task or a probe shared with the worktrees can tell.
+    v.insert(
+        "is_main".into(),
+        if is_main(slug) { "1" } else { "0" }.into(),
+    );
     v.insert("project".into(), project.name());
     v.insert(
         "repo".into(),
@@ -206,7 +229,14 @@ pub fn vars(project: &Project, root: &Path, slug: &str, state: &WtState) -> Vars
     for name in declared_opts(project) {
         v.entry(format!("opt.{name}")).or_default();
     }
-    crate::tmpl::expand(&v, &project.config.vars)
+    match &project.config.main {
+        Some(main) if is_main(slug) => {
+            let mut project_vars = project.config.vars.clone();
+            project_vars.extend(main.vars.clone());
+            crate::tmpl::expand(&v, &project_vars)
+        }
+        _ => crate::tmpl::expand(&v, &project.config.vars),
+    }
 }
 
 /// Options mentioned anywhere in the config, so missing ones can be blanked out.
