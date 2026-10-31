@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `[[copy]]` `mode = "reflink"`: copy-on-write clones (btrfs, XFS, bcachefs). Near-zero
+  disk like a hardlink, but each file is the worktree's own: a write, by a tool or by hand,
+  no longer reaches the main repository and the other worktrees. Permissions and times
+  are kept. Where the filesystem cannot clone (ext4, tmpfs, macOS for now), the tree falls
+  back to hardlinks, then copies. Measured on 92 000 files (`vendor/` + `node_modules/`):
+  4.9 s instead of 2.8 s, about 100 MiB of metadata per worktree for its small files.
+
 - The main repository as a worktree, `@`, with a `[main]` table: `wt up @` runs its own
   command (`[main] up`, usually the project's daily one) in the foreground, with every
   `[ports]` entry allocated like a worktree's, `[main.vars]` overriding `[vars]` and

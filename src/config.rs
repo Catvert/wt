@@ -200,6 +200,11 @@ pub enum CopyMode {
     /// replace files, which cleanly breaks the link.
     #[default]
     Hardlink,
+    /// Copy-on-write clone (btrfs, XFS, bcachefs): near-zero disk like a hardlink, but each
+    /// file is its own — a write in the worktree, by a tool or by hand, never reaches the
+    /// main repository. Falls back to a hardlink where the filesystem cannot clone (ext4,
+    /// tmpfs, macOS for now).
+    Reflink,
     /// Real copy, for what the worktree will modify (a `.env`, typically).
     Copy,
     /// Symbolic link to the source.

@@ -8,8 +8,9 @@ Gestionnaire de worktrees git, configuré **par projet** dans un fichier `wt.tom
 Le binaire ne connaît ni Docker, ni Laravel, ni npm. Il sait faire cinq choses :
 
 - créer et supprimer des worktrees git ;
-- recopier ce que le worktree doit hériter du repo principal (hardlinks pour `vendor/`,
-  `node_modules/`… — quasi gratuit sur le disque) ;
+- recopier ce que le worktree doit hériter du repo principal (hardlinks ou, sur
+  btrfs/XFS, clones copy-on-write pour `vendor/`, `node_modules/`… — quasi gratuit sur le
+  disque) ;
 - exécuter les commandes shell déclarées par le projet aux moments qui comptent
   (création, démarrage, arrêt, suppression) et à la demande (`[tasks]`) ;
 - suivre un état par worktree (branche, options du dernier démarrage, ports si le projet
@@ -430,7 +431,7 @@ dirs = ["storage/framework/views"]   # créés après le checkout
 
 [[copy]]
 from = "node_modules"                # to = from par défaut
-mode = "hardlink"                    # hardlink | copy | symlink
+mode = "hardlink"                    # hardlink | reflink | copy | symlink
 
 [ports.vite]
 base = 5200                          # premier port testé

@@ -8,8 +8,8 @@ uses a `justfile`.
 The binary knows nothing about Docker, Laravel or npm. It does five things:
 
 - creates and removes git worktrees;
-- copies what a worktree should inherit from the main repository (hardlinks for
-  `vendor/`, `node_modules/`… — nearly free on disk);
+- copies what a worktree should inherit from the main repository (hardlinks or,
+  on btrfs/XFS, copy-on-write clones for `vendor/`, `node_modules/`… — nearly free on disk);
 - runs the shell commands the project declares at the moments that matter (creation,
   start, stop, removal) and on demand (`[tasks]`);
 - tracks per-worktree state (branch, last start's options, ports if the project asks for
@@ -411,7 +411,7 @@ dirs = ["storage/framework/views"]   # created after the checkout
 
 [[copy]]
 from = "node_modules"                # to = from by default
-mode = "hardlink"                    # hardlink | copy | symlink
+mode = "hardlink"                    # hardlink | reflink | copy | symlink
 
 [ports.vite]
 base = 5200                          # first port tried

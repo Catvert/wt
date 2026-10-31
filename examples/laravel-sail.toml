@@ -22,7 +22,10 @@ host = "{{slug}}.wt.localhost"
 compose = "docker compose -f docker-compose.worktree.yml -p {{repo}}-wt-{{slug}}"
 
 # Hardlinks: vendor/ and node_modules/ cost a few seconds and almost no disk. composer
-# and npm replace files, which cleanly breaks the link.
+# and npm replace files, which cleanly breaks the link — but a file edited in place (a
+# debug line in vendor/, a tool rewriting its metadata) changes in every worktree and in
+# the main repository. On btrfs or XFS, `mode = "reflink"` costs the same disk, about
+# twice the time, and keeps each worktree's files its own.
 [[copy]]
 from = "vendor"
 mode = "hardlink"

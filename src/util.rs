@@ -188,8 +188,16 @@ pub fn alloc_port(base: u16, reserved: &[u16]) -> Result<u16> {
 }
 
 /// Reproduces `from` into `to`. Hardlinks share inodes: copying a 300 MB `vendor/`
-/// takes a few seconds and almost no disk space.
+/// takes a few seconds and almost no disk space. Reflinks share only the data blocks:
+/// each file is its own, so a write stays in the worktree.
 pub fn copy_tree(from: &Path, to: &Path, mode: CopyMode) -> Result<()> {
+    // One refusal (filesystem without reflinks, ext4 or tmpfs) is enough to know: the rest
+    // of the tree goes straight to the fallback instead of failing file after file.
+    let mut can_clone = mode == CopyMode::Reflink;
+    copy_entry(from, to, mode, &mut can_clone)
+}
+
+fn copy_entry(from: &Path, to: &Path, mode: CopyMode, can_clone: &mut bool) -> Result<()> {
     if mode == CopyMode::Symlink {
         if let Some(parent) = to.parent() {
             fs::create_dir_all(parent)?;
@@ -223,7 +231,7 @@ pub fn copy_tree(from: &Path, to: &Path, mode: CopyMode) -> Result<()> {
         fs::create_dir_all(to)?;
         for entry in fs::read_dir(from)? {
             let entry = entry?;
-            copy_tree(&entry.path(), &to.join(entry.file_name()), mode)?;
+            copy_entry(&entry.path(), &to.join(entry.file_name()), mode, can_clone)?;
         }
         return Ok(());
     }
@@ -232,18 +240,61 @@ pub fn copy_tree(from: &Path, to: &Path, mode: CopyMode) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
     match mode {
-        // A hardlink fails across filesystems: fall back to a copy rather than giving
-        // up on the whole tree.
-        CopyMode::Hardlink => {
-            if fs::hard_link(from, to).is_err() {
-                fs::copy(from, to)?;
+        // Without reflinks, the hardlink keeps the disk and the time near zero, as before.
+        CopyMode::Reflink => {
+            if *can_clone && reflink(from, to, &meta).is_ok() {
+                return Ok(());
             }
+            *can_clone = false;
+            hardlink_or_copy(from, to)?;
         }
+        CopyMode::Hardlink => hardlink_or_copy(from, to)?,
         _ => {
             fs::copy(from, to)?;
         }
     }
     Ok(())
+}
+
+/// A hardlink fails across filesystems: fall back to a copy rather than giving up on the
+/// whole tree.
+fn hardlink_or_copy(from: &Path, to: &Path) -> Result<()> {
+    if fs::hard_link(from, to).is_err() {
+        fs::copy(from, to)?;
+    }
+    Ok(())
+}
+
+/// Copy-on-write clone (btrfs, XFS, bcachefs): a new file sharing the source's blocks.
+/// Permissions and times are carried over, as `cp -a` would.
+#[cfg(target_os = "linux")]
+fn reflink(from: &Path, to: &Path, meta: &fs::Metadata) -> std::io::Result<()> {
+    use std::os::fd::AsRawFd;
+
+    let src = fs::File::open(from)?;
+    let dst = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(to)?;
+    // SAFETY: both descriptors are open for the duration of the call.
+    if unsafe { libc::ioctl(dst.as_raw_fd(), libc::FICLONE, src.as_raw_fd()) } != 0 {
+        let err = std::io::Error::last_os_error();
+        drop(dst);
+        let _ = fs::remove_file(to);
+        return Err(err);
+    }
+    dst.set_permissions(meta.permissions())?;
+    dst.set_times(
+        fs::FileTimes::new()
+            .set_accessed(meta.accessed()?)
+            .set_modified(meta.modified()?),
+    )?;
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn reflink(_from: &Path, _to: &Path, _meta: &fs::Metadata) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
 }
 
 pub fn is_wsl() -> bool {
@@ -373,6 +424,46 @@ mod tests {
             normalize(Path::new("/home/x/project/../project-wt/demo")),
             PathBuf::from("/home/x/project-wt/demo")
         );
+    }
+
+    #[test]
+    fn reflink_copies_are_independent_or_fall_back_to_hardlinks() {
+        let dir = std::env::temp_dir().join(format!("wt-reflink-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let src = dir.join("src");
+        fs::create_dir_all(src.join("sub")).unwrap();
+        fs::write(src.join("sub/file.txt"), "original").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("sub/file.txt", src.join("link")).unwrap();
+
+        copy_tree(&src, &dir.join("dst"), CopyMode::Reflink).unwrap();
+        let copy = dir.join("dst/sub/file.txt");
+        assert_eq!(fs::read_to_string(&copy).unwrap(), "original");
+        #[cfg(unix)]
+        assert_eq!(
+            fs::read_link(dir.join("dst/link")).unwrap(),
+            Path::new("sub/file.txt")
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let (a, b) = (
+                fs::metadata(src.join("sub/file.txt")).unwrap(),
+                fs::metadata(&copy).unwrap(),
+            );
+            if a.ino() != b.ino() {
+                // Real clone: a write must not reach the source.
+                assert_eq!(a.mode(), b.mode());
+                assert_eq!(a.mtime(), b.mtime());
+                fs::write(&copy, "changed").unwrap();
+                assert_eq!(
+                    fs::read_to_string(src.join("sub/file.txt")).unwrap(),
+                    "original"
+                );
+            }
+        }
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -27,7 +27,8 @@ dirs = []
 host = "{{slug}}.localhost"
 
 # Files inherited from the main repository.
-# mode: hardlink (default, nearly free) | copy | symlink
+# mode: hardlink (default, nearly free) | reflink (as free, and isolated, on btrfs/XFS)
+#       | copy | symlink
 # [[copy]]
 # from = "node_modules"
 # mode = "hardlink"
