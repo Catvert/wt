@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve, sep } from "node:path";
 import { adopting, findWorktree, real, run, wt } from "./wt";
@@ -88,6 +89,11 @@ export async function adopt(directory: string, { automatic }: { automatic: boole
  * Après l'archivage, Paseo supprime le checkout (git worktree remove, puis rm). `wt gc`
  * ne nettoie qu'un worktree disparu : on attend donc la suppression, puis il lance les
  * hooks de retrait (pre_rm dans un dossier vide, post_rm) et efface l'état et le port.
+ *
+ * Les services du worktree tournent encore pendant la suppression : Vite recrée aussitôt
+ * public/ et .vite/ dans le dossier, qui ne disparaît alors jamais (et que gc prend pour
+ * un dossier étranger). Un checkout sans .git est un worktree que Paseo a retiré : ce qui
+ * y reste a été régénéré, `wt down` arrête ce qui l'écrit et le dossier est effacé.
  */
 export async function release(directory: string) {
   if (!directory.startsWith(paseoWorktrees)) return;
@@ -96,16 +102,26 @@ export async function release(directory: string) {
   const worktree = await findWorktree(await wt.ls(project.main), directory);
   if (!worktree) return;
 
-  const deadline = Date.now() + 5 * 60_000;
   // Le checkout, pas le lien <root>/<slug> : celui-ci reste, pendant, jusqu'au gc.
-  const present = () => existsSync(worktree.checkout);
-  while (present() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 3000));
-  if (present()) {
-    // Encore là : un autre workspace l'utilise, ou Paseo n'a pas tout supprimé.
-    log(`${worktree.slug} : ${worktree.checkout} toujours présent, wt gc non lancé`);
-    return;
+  const { slug, checkout } = worktree;
+  const deadline = Date.now() + 5 * 60_000;
+  for (;;) {
+    if (!existsSync(checkout)) {
+      const r = await run("wt", ["gc", "--apply", slug, "-C", project.main], 10 * 60_000);
+      log(`${slug} : wt gc ${r.ok ? "terminé" : "en échec"}\n${(r.stdout + r.stderr).trim()}`);
+      // Recréé entre-temps par un service : on recommence.
+      if (r.ok || !existsSync(checkout)) return;
+    } else if (!existsSync(join(checkout, ".git"))) {
+      const r = await run("wt", ["down", slug, "-C", project.main], 2 * 60_000);
+      log(`${slug} : restes régénérés dans ${checkout}, wt down ${r.ok ? "terminé" : "en échec"}, dossier effacé`);
+      await rm(checkout, { recursive: true, force: true });
+    }
+    if (Date.now() >= deadline) {
+      // Encore un worktree : un autre workspace l'utilise, ou Paseo n'a pas tout supprimé.
+      log(`${slug} : ${checkout} toujours présent, wt gc non lancé`);
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 3000));
   }
-  const r = await run("wt", ["gc", "--apply", worktree.slug, "-C", project.main], 10 * 60_000);
-  log(`${worktree.slug} : wt gc ${r.ok ? "terminé" : "en échec"}\n${(r.stdout + r.stderr).trim()}`);
 }
 

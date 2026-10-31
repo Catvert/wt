@@ -41,7 +41,10 @@ its ports, copies, dependencies and hooks, and knows its addresses.
 - **Terminals.** `wt up`, `wt down` and every task run in a Paseo terminal of the
   workspace, so `[[prompt]]` questions can be answered and the output stays visible.
 - **Cleanup.** When a workspace is archived, the plugin waits for Paseo to delete the
-  checkout, then runs `wt gc --apply <slug>`: removal hooks, state and port go.
+  checkout, then runs `wt gc --apply <slug>`: removal hooks, state and port go. Files a
+  still-running service writes back into the deleted checkout (Vite's `public/`, `.vite/`)
+  are handled: once the checkout has no `.git`, the plugin runs `wt down <slug>` and
+  deletes what is left.
 - **Command Center.** "wt : ouvrir l'application du worktree" and "wt : panneau du worktree".
 
 ## Setup

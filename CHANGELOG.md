@@ -51,6 +51,10 @@ All notable changes to this project are documented here. The format follows
 - Paseo plugin: worktrees created under a custom `worktrees.root` (Paseo's `config.json`)
   were neither adopted nor cleaned up after archiving; only `$PASEO_HOME/worktrees` was
   recognised.
+- Paseo plugin: an archived worktree whose services were still running was never cleaned
+  up. Vite wrote `public/` and `.vite/` back into the checkout Paseo had just deleted, so it
+  never disappeared and `wt gc` took it for a foreign directory. A checkout left without
+  `.git` is now stopped (`wt down`) and deleted before `wt gc --apply`.
 
 ## [0.10.0] — 2026-10-27
 
