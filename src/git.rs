@@ -228,6 +228,38 @@ pub fn worktree_add(main: &Path, path: &Path, branch: &str, from: Option<&str>) 
     Ok(())
 }
 
+/// `git branch -m`: renames a local branch, its upstream configuration and reflog with
+/// it. Works on the branch a worktree has checked out — that worktree simply follows.
+///
+/// The upstream moves along unchanged, still `origin/<from>`. When that branch was never
+/// pushed it is only `wt new`'s wiring (`ensure_upstream`): it becomes `origin/<to>`, so
+/// the first push creates the new name. Returns whether the old upstream exists remotely,
+/// where the branch keeps tracking it.
+pub fn branch_rename(main: &Path, from: &str, to: &str) -> Result<bool> {
+    git(main, &["branch", "-m", from, to])?;
+    let merge_key = format!("branch.{to}.merge");
+    let remote = git_opt(main, &["config", "--get", &format!("branch.{to}.remote")]);
+    let merge = git_opt(main, &["config", "--get", &merge_key]);
+    match (remote, merge) {
+        (Some(remote), Some(merge)) if merge == format!("refs/heads/{from}") => {
+            if remote_branch_exists(main, &format!("{remote}/{from}")) {
+                return Ok(true);
+            }
+            let _ = git(main, &["config", &merge_key, &format!("refs/heads/{to}")]);
+            Ok(false)
+        }
+        _ => Ok(false),
+    }
+}
+
+/// `git worktree move`: the directory and git's record of it, together.
+pub fn worktree_move(main: &Path, from: &Path, to: &Path) -> Result<()> {
+    let from_s = from.to_string_lossy().into_owned();
+    let to_s = to.to_string_lossy().into_owned();
+    git(main, &["worktree", "move", &from_s, &to_s])?;
+    Ok(())
+}
+
 /// Wires a branch that tracks nothing to `origin/<branch>`, so the first `git push`
 /// from the worktree needs no `-u origin …`. The remote ref usually does not exist
 /// yet — that is exactly what the push will create. Branches born with a start point

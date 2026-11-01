@@ -901,3 +901,245 @@ up = ["sleep 30 & sleep 30; echo never > after.txt", "echo never > next.txt"]
         serde_json::from_slice(&wt(dir).args(["ls", "--json"]).output().unwrap().stdout).unwrap();
     assert_eq!(ls[0]["stop_at"], serde_json::Value::Null);
 }
+
+const MOVABLE: &str = r#"
+branch = "wt/{{slug}}"
+
+[hooks]
+up = ["touch .up"]
+down = ["rm -f .up"]
+post_mv = ["echo {{old_slug}}:{{old_branch}}:{{slug}}:{{branch}}:$WT_OLD_SLUG > moved"]
+
+[status]
+up = "test -f .up"
+
+[ports.http]
+base = 8300
+"#;
+
+fn root_of(dir: &Path) -> std::path::PathBuf {
+    dir.parent()
+        .unwrap()
+        .join(format!("{}-wt", dir.file_name().unwrap().to_string_lossy()))
+}
+
+fn branches(dir: &Path) -> String {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["branch", "--format=%(refname:short)"])
+        .output()
+        .unwrap();
+    stdout(&out)
+}
+
+/// `wt mv` gives a worktree another name: slug, template branch, directory and state
+/// follow, ports and options stay, and `post_mv` learns the old names.
+#[test]
+fn mv_renames_slug_branch_directory_and_state() {
+    let project = project(MOVABLE);
+    let dir = project.path();
+    let root = root_of(dir);
+    let out = wt(dir)
+        .args(["new", "demo", "--set", "db=iso"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // Started: its services run under the old name.
+    wt(dir).args(["up", "demo"]).output().unwrap();
+    let before = fs::read_to_string(root.join(".wt/demo.toml")).unwrap();
+    let port = before
+        .lines()
+        .find(|l| l.starts_with("http"))
+        .unwrap()
+        .to_string();
+    let out = wt(dir).args(["mv", "demo", "auth"]).output().unwrap();
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("wt down demo"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    wt(dir).args(["down", "demo"]).output().unwrap();
+
+    let out = wt(dir).args(["mv", "demo", "auth"]).output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout(&out).contains("renamed to 'auth'"),
+        "{}",
+        stdout(&out)
+    );
+    assert!(!root.join("demo").exists());
+    assert!(root.join("auth/file.txt").exists());
+    assert!(!root.join(".wt/demo.toml").exists());
+    let after = fs::read_to_string(root.join(".wt/auth.toml")).unwrap();
+    assert!(after.contains(&port), "ports changed: {after}");
+    assert!(after.contains("db = \"iso\""), "{after}");
+    assert!(after.contains("branch = \"wt/auth\""), "{after}");
+    let list = branches(dir);
+    assert!(
+        list.contains("wt/auth") && !list.contains("wt/demo"),
+        "{list}"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("auth/moved")).unwrap().trim(),
+        "demo:wt/demo:auth:wt/auth:demo"
+    );
+    assert!(stdout(&wt(dir).args(["ls"]).output().unwrap()).contains("auth"));
+
+    // A branch that is not the template's stays; --branch names one explicitly.
+    git(&root.join("auth"), &["branch", "-m", "feature/login"]);
+    wt(dir).args(["mv", "auth", "login"]).output().unwrap();
+    assert!(branches(dir).contains("feature/login"));
+    let out = wt(dir)
+        .args(["mv", "login", "sso", "--branch", "feature/sso"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let b = branches(dir);
+    assert!(
+        b.contains("feature/sso") && !b.contains("feature/login"),
+        "{b}"
+    );
+
+    wt(dir).args(["rm", "sso", "-y"]).output().unwrap();
+}
+
+#[test]
+fn mv_refuses_what_it_cannot_do_and_leaves_things_as_they_were() {
+    let project = project(MOVABLE);
+    let dir = project.path();
+    let root = root_of(dir);
+    for slug in ["a", "b"] {
+        wt(dir).args(["new", slug]).output().unwrap();
+    }
+    let fails = |args: &[&str], expect: &str| {
+        let out = wt(dir).args(args).output().unwrap();
+        assert!(!out.status.success(), "{args:?} succeeded");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains(expect), "{args:?}: {err}");
+    };
+    fails(&["mv", "a", "b"], "already exists");
+    fails(&["mv", "a", "Bad_Slug"], "Bad_Slug");
+    fails(&["mv", "a", "@"], "main repository");
+    fails(&["mv", "a", "c", "--branch", "wt/b"], "wt/b");
+    fails(&["mv", "nope", "c"], "nope");
+    assert!(root.join("a/file.txt").exists());
+    assert!(root.join(".wt/a.toml").exists());
+    assert!(branches(dir).contains("wt/a"));
+    for slug in ["a", "b"] {
+        wt(dir).args(["rm", slug, "-y"]).output().unwrap();
+    }
+}
+
+/// An adopted checkout belongs to the tool that created it: it stays where it is, only
+/// the link and the state move.
+#[test]
+fn mv_moves_the_link_of_an_adopted_checkout() {
+    let project = project(MOVABLE);
+    let dir = project.path();
+    let root = root_of(dir);
+    let outside = tempfile::tempdir().unwrap();
+    let ext = outside.path().join("festive-blobfish");
+    git(
+        dir,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "festive-blobfish",
+            ext.to_str().unwrap(),
+        ],
+    );
+    let ext = fs::canonicalize(ext).unwrap();
+    let out = wt(dir)
+        .args(["new", "festive-blobfish", "--adopt", ext.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let out = wt(dir)
+        .args(["mv", "festive-blobfish", "login", "--branch", "feat/login"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(ext.join("file.txt").exists(), "the adopted checkout moved");
+    assert_eq!(fs::read_link(root.join("login")).unwrap(), ext);
+    assert!(root.join("festive-blobfish").symlink_metadata().is_err());
+    let state = fs::read_to_string(root.join(".wt/login.toml")).unwrap();
+    assert!(
+        state.contains(&format!("path = \"{}\"", ext.display())),
+        "{state}"
+    );
+    assert!(state.contains("branch = \"feat/login\""), "{state}");
+    assert!(branches(dir).contains("feat/login"));
+    assert_eq!(
+        fs::read_to_string(ext.join("moved")).unwrap().trim(),
+        "festive-blobfish:festive-blobfish:login:feat/login:festive-blobfish"
+    );
+    wt(dir).args(["rm", "login", "-y"]).output().unwrap();
+}
+
+/// The upstream `wt new` wired follows a branch that was never pushed; one that was keeps
+/// tracking it, and wt says how to publish the new name.
+#[test]
+fn mv_rewires_an_unpushed_upstream_only() {
+    let project = project(MOVABLE);
+    let dir = project.path();
+    let remote = tempfile::tempdir().expect("tempdir");
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        dir,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    let config = |key: &str| {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["config", "--get", key])
+            .output()
+            .unwrap();
+        stdout(&out).trim().to_string()
+    };
+
+    wt(dir).args(["new", "draft"]).output().unwrap();
+    wt(dir).args(["mv", "draft", "idea"]).output().unwrap();
+    assert_eq!(config("branch.wt/idea.merge"), "refs/heads/wt/idea");
+
+    wt(dir).args(["new", "shared"]).output().unwrap();
+    git(
+        &root_of(dir).join("shared"),
+        &["push", "-q", "origin", "wt/shared"],
+    );
+    let out = wt(dir).args(["mv", "shared", "public"]).output().unwrap();
+    assert!(
+        stdout(&out).contains("git push -u origin wt/public"),
+        "{}",
+        stdout(&out)
+    );
+    assert_eq!(config("branch.wt/public.merge"), "refs/heads/wt/shared");
+    for slug in ["idea", "public"] {
+        wt(dir).args(["rm", slug, "-y"]).output().unwrap();
+    }
+}

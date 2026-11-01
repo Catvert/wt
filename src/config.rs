@@ -247,6 +247,11 @@ pub struct Hooks {
     /// After removal (the directory is gone, cwd = main repository).
     #[serde(default)]
     pub post_rm: Commands,
+    /// After `wt mv` (cwd = the worktree, under its new slug): what the project derived
+    /// from the old slug — databases, container names, `.env` — follows it.
+    /// `{{old_slug}}`, `{{old_branch}}` and `{{old_path}}` give the previous names.
+    #[serde(default)]
+    pub post_mv: Commands,
 }
 
 /// `[main]`: the main repository started like a worktree, under the slug `@`.

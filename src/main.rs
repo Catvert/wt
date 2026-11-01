@@ -136,6 +136,22 @@ enum Cmd {
         #[arg(long, short)]
         yes: bool,
     },
+    /// Renames a worktree: its slug, its branch, its directory or link, its state.
+    ///
+    /// The ports and options are kept. The branch follows when it still has the name the
+    /// wt.toml `branch` template gave it, or when --branch names the new one; the
+    /// `post_mv` hooks then carry over what the project derived from the old slug. A
+    /// started worktree is refused: `wt down` first.
+    #[command(visible_alias = "rename")]
+    Mv {
+        #[arg(add = complete::slugs())]
+        slug: String,
+        new_slug: String,
+        /// New branch name. Defaults to the template's for the new slug when the branch
+        /// still has the template's name for the old one, otherwise the branch is kept.
+        #[arg(long, value_name = "NAME")]
+        branch: Option<String>,
+    },
     /// Cleans up after worktrees removed without `wt rm` (dry run unless --apply).
     ///
     /// For each worktree wt has a state for but whose directory is gone: pre_rm hooks
@@ -337,6 +353,11 @@ fn try_main() -> Result<()> {
             let slug = selected_slug(&app, slug)?;
             app.cmd_rm(&slug, yes)
         }
+        Some(Cmd::Mv {
+            slug,
+            new_slug,
+            branch,
+        }) => app.cmd_mv(&slug, &new_slug, branch.as_deref()),
         Some(Cmd::Gc {
             apply,
             forget,

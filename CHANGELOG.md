@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `wt mv <slug> <new> [--branch name]` (alias `wt rename`): a worktree under another
+  name. The branch follows when it still has the name the `branch` template gave it, or
+  when `--branch` names the new one; an upstream `wt new` wired to a branch never pushed
+  follows too, one already pushed keeps being tracked (wt prints the `git push -u`). The
+  checkout moves to `<root>/<new>` with `git worktree move`, or, adopted, stays where it
+  is and only its link moves. Ports, options and the automatic stop are kept. Then the
+  new `post_mv` hooks run in the worktree with `{{old_slug}}`, `{{old_branch}}` and
+  `{{old_path}}` (`$WT_OLD_SLUG`…), for what the project derives from the slug
+  (databases, containers, `.env`). A started worktree is refused, as is the main
+  repository; any failure before the hooks undoes what was done.
+
 - `[[copy]]` `mode = "reflink"`: copy-on-write clones (btrfs, XFS, bcachefs). Near-zero
   disk like a hardlink, but each file is the worktree's own: a write, by a tool or by hand,
   no longer reaches the main repository and the other worktrees. Permissions and times
@@ -55,6 +66,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Nine error messages (invalid slug, bad `--set`, unknown task, missing copy source…)
+  showed their translation key, `err.invalid_slug`, instead of their text: they were
+  filed under `hint` in both catalogues.
 - Paseo plugin: worktrees created under a custom `worktrees.root` (Paseo's `config.json`)
   were neither adopted nor cleaned up after archiving; only `$PASEO_HOME/worktrees` was
   recognised.

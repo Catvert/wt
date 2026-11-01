@@ -128,6 +128,7 @@ wt pick                 # fuzzy picker: worktree, then action
 | `wt keep <slug> <2h\|never>` | moves the automatic stop: that long from now, or none |
 | `wt ls` / `wt show [slug]` | worktree state (`--json`: see below) |
 | `wt rm [slug] [-y]` | `pre_rm` hooks, worktree removal, `post_rm` hooks |
+| `wt mv <slug> <new> [--branch name]` (alias `rename`) | renames a stopped worktree: slug, branch, directory (or an adopted checkout's link), state; ports and options are kept; then `post_mv` hooks |
 | `wt gc [--apply] [--forget slug] [slug…]` | cleans up after worktrees removed without `wt rm` (dry run by default, see [docs/gc.md](docs/gc.md)) |
 | `wt shell [slug]` | opens a shell at the worktree root |
 | `wt cd [slug]` | changes directory to the worktree (needs `wt shell-init`) |
@@ -422,6 +423,8 @@ up       = ["docker compose -p {{repo}}-{{slug}} up -d"]
 down     = ["docker compose -p {{repo}}-{{slug}} down"]
 pre_rm   = ["docker compose -p {{repo}}-{{slug}} down -v"]
 post_rm  = []
+# After `wt mv`: {{old_slug}}, {{old_branch}}, {{old_path}} hold the previous names.
+post_mv  = ["docker compose -p {{repo}}-{{old_slug}} down -v"]
 
 [status]
 up = "docker compose -p {{repo}}-{{slug}} ps -q app | grep -q ."   # exit 0 = started

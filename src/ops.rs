@@ -456,15 +456,7 @@ impl App {
         };
         let branch = match branch {
             Some(b) => b.to_string(),
-            None => {
-                let tpl = self
-                    .project
-                    .config
-                    .branch
-                    .clone()
-                    .unwrap_or_else(|| "wt/{{slug}}".into());
-                tmpl::render(&tpl, &self.vars(slug, &st))
-            }
+            None => self.default_branch(slug, &st),
         };
         st.branch = branch.clone();
 
@@ -869,6 +861,155 @@ impl App {
             self.out(format!("  {}", t!("hint.branch_kept", branch = branch)));
         }
         Ok(())
+    }
+
+    // --------------------------------------------------------------------------------
+    // mv
+    // --------------------------------------------------------------------------------
+
+    /// `wt mv <slug> <new>`: the worktree under another name. The branch follows when it
+    /// still has the name the wt.toml template gave it (or `--branch` names one), the
+    /// checkout moves to `<root>/<new>` (an adopted one stays where it is, only its link
+    /// moves), the state keeps its ports and options. Then the `post_mv` hooks carry over
+    /// what the project derived from the old slug.
+    ///
+    /// A started worktree is refused: its services run under the old name.
+    pub fn cmd_mv(&self, slug: &str, new_slug: &str, branch: Option<&str>) -> Result<()> {
+        if state::is_main(slug) {
+            bail!("{}", t!("err.main_not_movable"));
+        }
+        validate_slug(new_slug)?;
+        let mut st = self.require_existing(slug)?;
+        let old_dir = self.dir(slug);
+        let new_dir = self.dir(new_slug);
+        if new_dir.symlink_metadata().is_ok() {
+            bail!("{}", t!("err.dir_exists", path = new_dir.display()));
+        }
+        if state::state_path(&self.root, new_slug).exists() {
+            bail!("{}", t!("err.mv_state_exists", slug = new_slug));
+        }
+        let wt = Worktree {
+            slug: slug.to_string(),
+            path: old_dir.clone(),
+            state: st.clone(),
+        };
+        if self.is_up(&wt) == Some(true) {
+            bail!("{}", t!("err.mv_running", slug = slug));
+        }
+
+        let checkout = state::checkout(&old_dir, &st);
+        let old_branch = crate::git::current_branch(&checkout);
+        let new_branch = match branch {
+            Some(b) => b.to_string(),
+            None if old_branch == self.default_branch(slug, &st) => {
+                self.default_branch(new_slug, &st)
+            }
+            None => old_branch.clone(),
+        };
+        let rename_branch = new_branch != old_branch;
+        if rename_branch {
+            if old_branch == "HEAD" || old_branch == "?" {
+                bail!("{}", t!("err.mv_detached", slug = slug));
+            }
+            if crate::git::local_branch_exists(&self.project.main, &new_branch) {
+                bail!("{}", t!("err.mv_branch_exists", branch = new_branch));
+            }
+        }
+
+        // Each step undoes the previous ones when it fails: a half-renamed worktree would
+        // be found by neither name.
+        let mut pushed = false;
+        if rename_branch {
+            self.info(t!("info.mv_branch", from = old_branch, to = new_branch).to_string());
+            pushed = crate::git::branch_rename(&self.project.main, &old_branch, &new_branch)?;
+        }
+        let undo_branch = || {
+            if rename_branch {
+                let _ = crate::git::branch_rename(&self.project.main, &new_branch, &old_branch);
+            }
+        };
+        let adopted = checkout != old_dir;
+        let moved = if adopted {
+            self.move_link(&old_dir, &new_dir, &checkout)
+        } else {
+            self.info(
+                t!(
+                    "info.mv_checkout",
+                    from = old_dir.display(),
+                    to = new_dir.display()
+                )
+                .to_string(),
+            );
+            crate::git::worktree_move(&self.project.main, &old_dir, &new_dir)
+        };
+        if let Err(e) = moved {
+            undo_branch();
+            return Err(e);
+        }
+
+        st.branch = new_branch.clone();
+        if let Err(e) = state::save(&self.root, new_slug, &st) {
+            let _ = if adopted {
+                self.move_link(&new_dir, &old_dir, &checkout)
+            } else {
+                crate::git::worktree_move(&self.project.main, &new_dir, &old_dir)
+            };
+            undo_branch();
+            return Err(e);
+        }
+        state::forget(&self.root, slug);
+
+        // From here on the rename is done: a failing hook leaves the worktree under its
+        // new name and says what did not follow.
+        let mut vars = self.vars(new_slug, &st);
+        vars.insert("old_slug".into(), slug.to_string());
+        vars.insert("old_branch".into(), old_branch.clone());
+        vars.insert("old_path".into(), old_dir.display().to_string());
+        if !self.project.config.hooks.post_mv.is_empty() {
+            let cwd = self.dir(new_slug);
+            self.run_commands("post_mv", &self.project.config.hooks.post_mv, &vars, &cwd)
+                .with_context(|| {
+                    t!("err.post_mv_failed", from = slug, to = new_slug).to_string()
+                })?;
+        }
+
+        self.ok(t!("ok.moved", from = slug, to = new_slug).to_string());
+        if pushed {
+            self.out(format!(
+                "  {}",
+                t!("hint.mv_pushed", from = old_branch, to = new_branch)
+            ));
+        }
+        Ok(())
+    }
+
+    /// The branch `wt new <slug>` would create: the wt.toml template, rendered.
+    fn default_branch(&self, slug: &str, st: &WtState) -> String {
+        let tpl = self
+            .project
+            .config
+            .branch
+            .clone()
+            .unwrap_or_else(|| "wt/{{slug}}".into());
+        tmpl::render(&tpl, &self.vars(slug, st))
+    }
+
+    /// An adopted checkout does not move: the link `wt` made to it does.
+    fn move_link(&self, from: &Path, to: &Path, target: &Path) -> Result<()> {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, to).with_context(|| {
+            t!(
+                "err.symlink_failed",
+                from = target.display(),
+                to = to.display()
+            )
+            .to_string()
+        })?;
+        fs::remove_file(from)
+            .with_context(|| t!("err.write_failed", path = from.display()).to_string())
+            .inspect_err(|_| {
+                let _ = fs::remove_file(to);
+            })
     }
 
     // --------------------------------------------------------------------------------

@@ -1,6 +1,22 @@
 _version: 1
 
 err:
+  mkdir_failed: "creating %{path}"
+  copy_source_missing: "copy source missing: %{path}"
+  copy_failed: "copying %{path}"
+  unknown_task: "unknown task '%{task}' (see: wt tasks)"
+  no_editor: "no editor found — set WT_IDE or [editor] command"
+  no_url: "this project has no URL ([open] url / source missing from %{path})"
+  no_matching_url: "no address matches '%{target}' (see: wt open %{slug} --list)"
+  invalid_slug: "invalid slug '%{slug}': only [a-z0-9-], like a DNS label"
+  bad_set: "--set expects key=value, got '%{value}'"
+  dir_exists: "directory %{path} already exists"
+  main_not_movable: "the main repository cannot be renamed"
+  mv_state_exists: "a state already exists for '%{slug}' (wt gc --forget %{slug} if it is orphaned)"
+  mv_running: "'%{slug}' is started: its services run under that name — wt down %{slug} first"
+  mv_detached: "'%{slug}' is on no branch (detached HEAD) — --branch does not apply"
+  mv_branch_exists: "local branch '%{branch}' already exists"
+  post_mv_failed: "'%{from}' is renamed to '%{to}', but the post_mv hooks failed: what the project derives from the slug may not have followed"
   no_main: "no [main] in %{path} — the main repository is not one of the worktrees"
   no_main_up: "no [main] up in %{path} — nothing to run in the main repository"
   main_running: "the main repository is already started (wt down @ stops it)"
@@ -54,6 +70,7 @@ label:
   root: "root"
 
 ok:
+  moved: "worktree '%{from}' renamed to '%{to}'"
   main_stopped: "main repository stopped"
   main_ended: "main repository: command ended"
   keep: "worktree '%{slug}' stops automatically in %{left}"
@@ -66,23 +83,16 @@ ok:
   config_created: "%{path} created"
 
 hint:
+  mv_pushed: "the branch still tracks origin/%{from}: git push -u origin %{to} to publish the new name"
   branch_kept: "branch kept: %{branch} (git branch -d %{branch} to delete it)"
   yes_no: "y/N"
   edit_then_new: "edit it, then: wt new demo"
-  dir_exists: "directory %{path} already exists"
-  mkdir_failed: "creating %{path}"
-  copy_source_missing: "copy source missing: %{path}"
-  copy_failed: "copying %{path}"
   cancelled: "cancelled"
-  unknown_task: "unknown task '%{task}' (see: wt tasks)"
-  no_editor: "no editor found — set WT_IDE or [editor] command"
-  no_url: "this project has no URL ([open] url / source missing from %{path})"
-  no_matching_url: "no address matches '%{target}' (see: wt open %{slug} --list)"
-  invalid_slug: "invalid slug '%{slug}': only [a-z0-9-], like a DNS label"
-  bad_set: "--set expects key=value, got '%{value}'"
   no_shell_integration: "shell integration missing — add `eval \"$(wt shell-init %{shell})\"` to your rc file, or use `wt shell %{slug}`"
 
 info:
+  mv_branch: "branch %{from} → %{to}"
+  mv_checkout: "moving %{from} to %{to}"
   main_not_running: "the main repository is not started"
   stops_in: "automatic stop in %{left} (wt keep to change it)"
   in: "in %{left}"
