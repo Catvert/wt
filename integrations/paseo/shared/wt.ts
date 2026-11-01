@@ -176,6 +176,24 @@ export function upPrompts(project: WtProject): WtPrompt[] {
   );
 }
 
+/** La réponse enregistrée du worktree à une question de `wt up`, à défaut celle du wt.toml. */
+export function savedAnswer(worktree: WtWorktree, p: WtPrompt) {
+  return worktree.opts[p.name] ?? p.default ?? "";
+}
+
+/**
+ * Les arguments de `wt up` : chaque question que le plugin pose passée en --set (wt les
+ * enregistre et ne les redemande pas), et l'arrêt automatique quand wt le connaît (wt ≥ 0.11,
+ * qui donne stop_at). `@` n'a pas de questions.
+ */
+export function upArgs(project: WtProject, worktree: WtWorktree, answer: (p: WtPrompt) => string, stopAfter: string) {
+  const prompts = worktree.main ? [] : upPrompts(project);
+  return [
+    "up", worktree.slug, ...prompts.flatMap((p) => ["--set", `${p.name}=${answer(p)}`]),
+    ...(worktree.stop_at !== undefined ? ["--stop-after", stopAfter] : []),
+  ];
+}
+
 /** Un choix oui/non (`yes`/`no`, `1`/`0`…) : une case à cocher plutôt que deux pastilles. */
 export function toggleValues(p: WtPrompt): { on: string; off: string } | null {
   if (p.type === "confirm") return { on: "1", off: "0" };

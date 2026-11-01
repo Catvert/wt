@@ -12,6 +12,12 @@ its ports, copies, dependencies and hooks, and knows its addresses.
   the worktree's addresses (the `[open]` URL and `[open] source` entries, the machine's
   `wt-proxy-url` when there is one, otherwise one `localhost` address per port), asks the
   `wt up` questions described below, and starts or stops it.
+- **Start/stop button.** Next to it, a ▶ / ■ button starts or stops the worktree in one
+  click, like an IDE's Run button: what the popover's first button would do (`wt up` with
+  the worktree's saved answers and the default automatic stop, `wt run dev` when the
+  `wt.toml` has no `up` hook, `wt down` or closing that terminal), in a Paseo terminal. It
+  shows a spinner until the state changes, and is greyed out when a dev server it did not
+  start is running. Hidden when the plugin cannot tell whether the worktree runs.
 - **Panel.** The `wt` panel, in a tab or in the Explorer, adds the options, the
   `[status.info]` probes, the uncommitted changes and the `wt.toml` tasks. The `wt up`
   questions with fixed choices (`[[prompt]]` without `source` or `when`) are asked there, as

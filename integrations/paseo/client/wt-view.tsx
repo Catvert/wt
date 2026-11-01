@@ -5,7 +5,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import {
-  addresses, formatLeft, startTask, stopChoices, toggleValues, tools, upPrompts, wtAdopt, wtKeep, type WtInfo, type WtPrompt,
+  addresses, formatLeft, savedAnswer, startTask, stopChoices, toggleValues, tools, upArgs, upPrompts, wtAdopt, wtKeep,
+  type WtInfo, type WtPrompt,
 } from "../shared/wt";
 import { useWtInfo } from "./use-wt-info";
 
@@ -88,20 +89,16 @@ export function WtView({ workspaceId, theme, compact, full, openBrowser, onDone,
   // enregistrée du worktree, à défaut le défaut du wt.toml. « Démarrer » les passe toutes en
   // --set ; wt les enregistre et ne les redemande pas. `@` n'en a pas.
   const prompts = w.main ? [] : upPrompts(project);
-  const stored = (p: WtPrompt) => w.opts[p.name] ?? p.default ?? "";
+  const stored = (p: WtPrompt) => savedAnswer(w, p);
   const value = (p: WtPrompt) => edits[p.name] ?? stored(p);
   const dirty = prompts.some((p) => edits[p.name] !== undefined && !sameAnswer(p, edits[p.name], stored(p)));
   // L'arrêt automatique (wt ≥ 0.11, qui donne stop_at) : la durée choisie, sinon WT_STOP_AFTER.
   const autoStop = w.stop_at !== undefined;
   const stopValue = stopAfter ?? data.defaultStopAfter ?? "never";
-  const upArgs = [
-    "up", w.slug, ...prompts.flatMap((p) => ["--set", `${p.name}=${value(p)}`]),
-    ...(autoStop ? ["--stop-after", stopValue] : []),
-  ];
   const up = () => {
     setEdits({});
     // Le terminal de `@` reste ouvert tant que sa commande tourne : il porte son nom.
-    void inTerminal(w.main ? "wt up @" : "wt up", upArgs);
+    void inTerminal(w.main ? "wt up @" : "wt up", upArgs(project, w, value, stopValue));
   };
 
   const terminal = async (name: string, command: string, args: string[], close = true) => {
@@ -462,6 +459,19 @@ export function headerIcon(running: boolean | null) {
         <Dot theme={theme} on={running} size={Math.round(size * 0.55)} />
       </View>
     );
+  };
+}
+
+/** L'état du bouton ▶/■ de l'en-tête. elsewhere : lancé hors du plugin, il ne sait pas l'arrêter. */
+export type RunKind = "start" | "stop" | "starting" | "stopping" | "elsewhere";
+
+/** Icône du bouton ▶/■ : verte pour démarrer, rouge pour arrêter, comme dans un IDE. */
+export function runIcon(kind: RunKind) {
+  return function WtRunIcon({ size, color, theme }: PluginButtonIconProps) {
+    const c = theme.colors;
+    const name = kind === "start" ? "Play" : kind === "starting" || kind === "stopping" ? "Loader" : "Square";
+    const tint = kind === "start" ? c.statusSuccess : kind === "stop" ? c.statusDanger : color;
+    return <Icon name={name} size={size} color={tint} />;
   };
 }
 
