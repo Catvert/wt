@@ -63,6 +63,11 @@ All notable changes to this project are documented here. The format follows
   never disappeared and `wt gc` took it for a foreign directory. A checkout left without
   `.git` is now stopped (`wt down`) and deleted before `wt gc --apply`.
 
+### Removed
+
+- `integrations/paseo/`: the Paseo plugin now lives with the infrastructure that deploys
+  it, outside this repository. `--json` stays the interface for such integrations.
+
 ## [0.10.0] — 2026-10-27
 
 ### Added

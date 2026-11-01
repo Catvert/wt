@@ -276,9 +276,9 @@ adopté, `dir` sinon ; `up` vaut `null` quand le projet ne déclare pas de `[sta
 sortie ne dépend pas de `WT_LANG`, et les champs ne font que s'ajouter : jamais renommés ni
 retirés.
 
-`integrations/paseo/` s'en sert : un plugin [Paseo](https://paseo.sh) qui adopte les
-worktrees que Paseo crée, affiche leurs adresses, ports et tâches dans le workspace, et
-lance `wt gc` une fois qu'un worktree archivé a été supprimé par Paseo.
+Les intégrations aux éditeurs et aux agents s'en servent : un plugin
+[Paseo](https://paseo.sh), par exemple, peut adopter les worktrees que Paseo crée et
+afficher leurs adresses, ports et tâches.
 
 ### Entrer dans un worktree
 

@@ -1,7 +1,0 @@
-{
-  "id": "wt",
-  "name": "wt",
-  "requirements": {
-    "paseo": ">=0.13.2"
-  }
-}

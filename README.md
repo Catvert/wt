@@ -266,9 +266,8 @@ and `wt tasks` take `--json`:
 `dir` otherwise; `up` is `null` when the project declares no `[status] up`. The output does
 not depend on `WT_LANG`, and fields are only ever added, never renamed or removed.
 
-`integrations/paseo/` uses it: a [Paseo](https://paseo.sh) plugin that adopts the
-worktrees Paseo creates, shows their addresses, ports and tasks in the workspace, and runs
-`wt gc` once Paseo has deleted an archived one.
+Editor and agent integrations build on it: a [Paseo](https://paseo.sh) plugin, for
+instance, can adopt the worktrees Paseo creates and show their addresses, ports and tasks.
 
 ### Getting into a worktree
 
