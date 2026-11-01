@@ -141,13 +141,21 @@ export function startTask(project: WtProject, worktree: WtWorktree) {
   return project.tasks.find((t) => ["dev", "start", "serve"].includes(t.name)) ?? null;
 }
 
-/** Les adresses à proposer : le proxy, puis celles de wt, sinon une par port. */
+/**
+ * Les adresses à proposer : le proxy, puis celles de wt, sinon une par port. Derrière le
+ * proxy, l'adresse principale de wt (`[open] url`, un nom local comme http://localhost) n'est
+ * pas joignable depuis un poste : le proxy la remplace et reprend son libellé.
+ */
 export function addresses(info: WtInfo): WtLink[] {
   const out: WtLink[] = [];
-  if (info.proxyUrl) out.push({ url: info.proxyUrl, label: "proxy", icon: null });
+  const primary = info.worktree?.url ?? null;
   const links = info.detail?.links.filter((l) => !l.icon) ??
-    (info.worktree?.url ? [{ url: info.worktree.url, label: "application", icon: null }] : []);
-  out.push(...links.filter((l) => !out.some((o) => o.url === l.url)));
+    (primary ? [{ url: primary, label: "application", icon: null }] : []);
+  if (info.proxyUrl) {
+    const label = links.find((l) => l.url === primary)?.label ?? "proxy";
+    out.push({ url: info.proxyUrl, label, icon: null });
+  }
+  out.push(...links.filter((l) => !(info.proxyUrl && l.url === primary) && !out.some((o) => o.url === l.url)));
   if (out.length === 0 && info.worktree) {
     for (const [name, port] of Object.entries(info.worktree.ports)) {
       out.push({ url: `http://localhost:${port}`, label: name, icon: null });

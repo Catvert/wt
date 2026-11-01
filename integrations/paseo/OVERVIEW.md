@@ -10,7 +10,8 @@ its ports, copies, dependencies and hooks, and knows its addresses.
   left to it. A checkout wt does not know yet can be adopted by hand from the panel.
 - **Header button.** Each adopted workspace gets a `wt · <port>` button. Its popover lists
   the worktree's addresses (the `[open]` URL and `[open] source` entries, the machine's
-  `wt-proxy-url` when there is one, otherwise one `localhost` address per port), asks the
+  `wt-proxy-url` when there is one, in place of the `[open]` URL and under its label,
+  otherwise one `localhost` address per port), asks the
   `wt up` questions described below, and starts or stops it.
 - **Start/stop button.** Next to it, a ▶ / ■ button starts or stops the worktree in one
   click, like an IDE's Run button: what the popover's first button would do (`wt up` with
