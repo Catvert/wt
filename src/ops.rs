@@ -413,17 +413,28 @@ impl App {
         }
     }
 
-    /// Allocates the requested phase's ports that are not already frozen in the state.
+    /// Allocates the requested phase's ports that are not already frozen in the state,
+    /// and moves into `WT_PORT_RANGE` a frozen port that lies outside it (one frozen
+    /// before the range was set), whatever its phase: the hooks get the new one.
     fn allocate_ports(&self, slug: &str, st: &mut WtState, phase: Allocate) -> Result<bool> {
         let mut changed = false;
+        let range = util::port_range()?;
         let reserved = state::reserved_ports(&self.root, slug);
         for (name, spec) in &self.project.config.ports {
-            if spec.allocate != phase || st.ports.contains_key(name) {
+            let frozen = st.ports.get(name).copied();
+            let outside = matches!((&range, frozen), (Some(r), Some(p)) if !r.contains(&p));
+            if !outside && (spec.allocate != phase || frozen.is_some()) {
                 continue;
             }
             let mut taken = reserved.clone();
             taken.extend(st.ports.values().copied());
-            let port = util::alloc_port(spec.base, &taken)?;
+            let port = match &range {
+                Some(r) => util::alloc_port_in(r, &taken)?,
+                None => util::alloc_port(spec.base, &taken)?,
+            };
+            if let Some(old) = frozen {
+                self.info(t!("info.port_moved", name = name, old = old, new = port).to_string());
+            }
             st.ports.insert(name.clone(), port);
             changed = true;
         }

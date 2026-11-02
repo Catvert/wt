@@ -623,6 +623,7 @@ raccourci est `o`.
 | `WT_LANG` | langue de l'interface (`en`, `fr`) ; sinon `LC_ALL`/`LC_MESSAGES`/`LANG`, puis l'anglais |
 | `WT_CONFIG` | chemin d'un `wt.toml` alternatif |
 | `WT_ROOT` | racine des worktrees des projets dont le `wt.toml` n'en fixe pas (même modèle, par ex. `{{main}}/../worktrees/{{repo}}` ; défaut `{{main}}/../{{repo}}-wt`) |
+| `WT_PORT_RANGE` | `début-fin` (par ex. `10100-10199`) : chaque `[ports.*]` est pris dans cette plage, sans tenir compte de `base`, et un port figé hors d'elle y est déplacé au démarrage suivant. Sur une machine partagée entre plusieurs comptes, une plage par compte : wt ne voit que les worktrees du sien, et le port figé d'un worktree arrêté d'un autre compte lui paraît libre |
 | `WT_STOP_AFTER` | `wt up --stop-after` par défaut (`8h`, `90m`…) : un worktree démarré s'arrête seul quand `wt down --expired` passe après l'échéance |
 | `WT_IDE` | éditeur prioritaire (commande ou chemin absolu, `.exe` Windows compris) |
 | `WT_TERMINAL` | shell ouvert dans le worktree (défaut `$SHELL`) |

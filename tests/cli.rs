@@ -40,10 +40,12 @@ fn git(dir: &Path, args: &[&str]) {
 /// machine's locale.
 fn wt(dir: &Path) -> Command {
     let mut cmd = Command::cargo_bin("wt").expect("binary");
-    // WT_ROOT from the machine running the tests would move every worktree root.
+    // WT_ROOT from the machine running the tests would move every worktree root, and
+    // WT_PORT_RANGE every port.
     cmd.current_dir(dir)
         .env("WT_LANG", "en")
-        .env_remove("WT_ROOT");
+        .env_remove("WT_ROOT")
+        .env_remove("WT_PORT_RANGE");
     cmd
 }
 
@@ -406,6 +408,91 @@ up = ["echo {{port.web}} > .port"]
     assert_eq!(read("one").trim(), one.trim());
 
     for slug in ["one", "two"] {
+        wt(dir).args(["rm", slug, "-y"]).output().unwrap();
+    }
+}
+
+/// On a machine shared by several accounts, each one's WT_PORT_RANGE: every port is
+/// taken inside it, and a port frozen before the range moves into it at the next start.
+#[test]
+fn port_range_confines_and_moves_ports() {
+    let project = project(
+        r#"
+branch = "wt/{{slug}}"
+
+[ports.web]
+base = 45230
+
+[ports.ws]
+base = 45240
+
+[hooks]
+up = ["echo {{port.web}} {{port.ws}} > .port"]
+"#,
+    );
+    let dir = project.path();
+    let root = dir
+        .parent()
+        .unwrap()
+        .join(format!("{}-wt", dir.file_name().unwrap().to_string_lossy()));
+    let read = |slug: &str| -> Vec<u16> {
+        fs::read_to_string(root.join(slug).join(".port"))
+            .unwrap()
+            .split_whitespace()
+            .map(|p| p.parse().unwrap())
+            .collect()
+    };
+    let up = |slug: &str, range: Option<&str>| {
+        let mut cmd = wt(dir);
+        if let Some(r) = range {
+            cmd.env("WT_PORT_RANGE", r);
+        }
+        let out = cmd.args(["up", slug]).output().unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        stdout(&out)
+    };
+
+    wt(dir).args(["new", "old"]).output().unwrap();
+    up("old", None);
+    let before = read("old");
+    assert!(before.iter().all(|p| *p >= 45230), "{before:?}");
+
+    let range = 45250..=45259;
+    let moved = up("old", Some("45250-45259"));
+    let after = read("old");
+    assert!(after.iter().all(|p| range.contains(p)), "{after:?}");
+    assert_ne!(
+        after[0], after[1],
+        "two ports of one worktree share a number"
+    );
+    assert!(moved.contains("outside WT_PORT_RANGE"), "{moved}");
+
+    // Inside the range, a restart keeps the ports, and another worktree gets others.
+    up("old", Some("45250-45259"));
+    assert_eq!(read("old"), after);
+    wt(dir).args(["new", "new"]).output().unwrap();
+    up("new", Some("45250-45259"));
+    let other = read("new");
+    assert!(
+        other
+            .iter()
+            .all(|p| range.contains(p) && !after.contains(p)),
+        "{other:?}"
+    );
+
+    let bad = wt(dir)
+        .env("WT_PORT_RANGE", "45259-45250")
+        .args(["up", "old"])
+        .output()
+        .unwrap();
+    assert!(!bad.status.success());
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("invalid WT_PORT_RANGE"));
+
+    for slug in ["old", "new"] {
         wt(dir).args(["rm", slug, "-y"]).output().unwrap();
     }
 }

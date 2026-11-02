@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `WT_PORT_RANGE=start-end`: every port is allocated in that range instead of from its
+  `base`, and a port frozen outside it moves in at the next `wt up` (the hooks get the
+  new one). For machines shared by several accounts: wt only sees its own account's
+  worktrees, so a port frozen by another account's stopped worktree looked free, was
+  taken, and the first worktree could no longer start. One range per account prevents it.
 - `wt mv <slug> <new> [--branch name]` (alias `wt rename`): a worktree under another
   name. The branch follows when it still has the name the `branch` template gave it, or
   when `--branch` names the new one; an upstream `wt new` wired to a branch never pushed

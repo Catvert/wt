@@ -38,6 +38,8 @@ err:
   spawn_failed: "lancement de : %{command}"
   command_failed: "échec (%{code}) : %{command}"
   no_free_port: "aucun port libre à partir de %{base}"
+  no_free_port_in: "aucun port libre dans %{range} (WT_PORT_RANGE)"
+  port_range_invalid: "WT_PORT_RANGE invalide : « %{value} » (attendu début-fin, par ex. 10100-10199)"
   read_failed: "lecture de %{path}"
   state_invalid: "fichier d'état invalide %{path}"
   write_failed: "écriture de %{path}"
@@ -91,6 +93,7 @@ hint:
   no_shell_integration: "intégration shell absente — ajoute `eval \"$(wt shell-init %{shell})\"` à ton fichier rc, ou utilise `wt shell %{slug}`"
 
 info:
+  port_moved: "port %{name} : %{old} → %{new} (hors de WT_PORT_RANGE)"
   mv_branch: "branche %{from} → %{to}"
   mv_checkout: "déplacement de %{from} vers %{to}"
   main_not_running: "le dépôt principal n'est pas démarré"

@@ -38,6 +38,8 @@ err:
   spawn_failed: "running: %{command}"
   command_failed: "failed (%{code}): %{command}"
   no_free_port: "no free port from %{base}"
+  no_free_port_in: "no free port in %{range} (WT_PORT_RANGE)"
+  port_range_invalid: "invalid WT_PORT_RANGE: \"%{value}\" (expected start-end, e.g. 10100-10199)"
   read_failed: "reading %{path}"
   state_invalid: "invalid state file %{path}"
   write_failed: "writing %{path}"
@@ -91,6 +93,7 @@ hint:
   no_shell_integration: "shell integration missing — add `eval \"$(wt shell-init %{shell})\"` to your rc file, or use `wt shell %{slug}`"
 
 info:
+  port_moved: "port %{name}: %{old} → %{new} (outside WT_PORT_RANGE)"
   mv_branch: "branch %{from} → %{to}"
   mv_checkout: "moving %{from} to %{to}"
   main_not_running: "the main repository is not started"

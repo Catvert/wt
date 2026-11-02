@@ -598,6 +598,7 @@ address and offers a picker as soon as there are several. In `wt tui`, its short
 | `WT_LANG` | interface language (`en`, `fr`); otherwise `LC_ALL`/`LC_MESSAGES`/`LANG`, then English |
 | `WT_CONFIG` | path to an alternative `wt.toml` |
 | `WT_ROOT` | worktree root for projects whose `wt.toml` sets none (same template, e.g. `{{main}}/../worktrees/{{repo}}`; default `{{main}}/../{{repo}}-wt`) |
+| `WT_PORT_RANGE` | `start-end` (e.g. `10100-10199`): every `[ports.*]` is taken in this range, `base` aside, and a port frozen outside it moves in at the next start. On a machine shared by several accounts, give each its own: wt only sees the worktrees of its account, so a port frozen by someone else's stopped worktree looks free |
 | `WT_STOP_AFTER` | default `wt up --stop-after` (`8h`, `90m`…): started worktrees stop on their own once `wt down --expired` runs past the deadline |
 | `WT_IDE` | preferred editor (command or absolute path, Windows `.exe` included) |
 | `WT_TERMINAL` | shell opened in the worktree (default `$SHELL`) |

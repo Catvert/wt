@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::net::TcpListener;
+use std::ops::RangeInclusive;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::Sender;
@@ -176,15 +177,43 @@ pub fn succeeds(cmd: &str, cwd: &Path, env: &BTreeMap<String, String>) -> bool {
 /// First free port from `base`, skipping those reserved by other worktrees — even
 /// stopped ones, so their ports stay stable across restarts.
 pub fn alloc_port(base: u16, reserved: &[u16]) -> Result<u16> {
-    let mut p = base;
-    loop {
-        if !reserved.contains(&p) && TcpListener::bind(("127.0.0.1", p)).is_ok() {
-            return Ok(p);
-        }
-        p = p
-            .checked_add(1)
-            .with_context(|| t!("err.no_free_port", base = base).to_string())?;
+    first_free(base..=u16::MAX, reserved)
+        .with_context(|| t!("err.no_free_port", base = base).to_string())
+}
+
+/// First free port of `range`, same rules as `alloc_port`: the allocation `WT_PORT_RANGE`
+/// confines to.
+pub fn alloc_port_in(range: &RangeInclusive<u16>, reserved: &[u16]) -> Result<u16> {
+    first_free(range.clone(), reserved).with_context(|| {
+        t!(
+            "err.no_free_port_in",
+            range = format!("{}-{}", range.start(), range.end())
+        )
+        .to_string()
+    })
+}
+
+fn first_free(mut ports: RangeInclusive<u16>, reserved: &[u16]) -> Option<u16> {
+    ports.find(|&p| !reserved.contains(&p) && TcpListener::bind(("127.0.0.1", p)).is_ok())
+}
+
+/// `WT_PORT_RANGE` (`10100-10199`): on a machine shared by several accounts, each one's
+/// range. wt only sees its own worktrees: without a range, a port frozen by a stopped
+/// worktree looks free to another account, which takes it, and the first one can no
+/// longer start. Unset or empty: the `base` of each `[ports.<name>]`.
+pub fn port_range() -> Result<Option<RangeInclusive<u16>>> {
+    match std::env::var("WT_PORT_RANGE") {
+        Ok(v) if !v.trim().is_empty() => parse_port_range(&v).map(Some),
+        _ => Ok(None),
     }
+}
+
+pub fn parse_port_range(value: &str) -> Result<RangeInclusive<u16>> {
+    let parsed = value.trim().split_once('-').and_then(|(a, b)| {
+        let (a, b) = (a.trim().parse::<u16>().ok()?, b.trim().parse::<u16>().ok()?);
+        (a > 0 && a <= b).then_some(a..=b)
+    });
+    parsed.with_context(|| t!("err.port_range_invalid", value = value).to_string())
 }
 
 /// Reproduces `from` into `to`. Hardlinks share inodes: copying a 300 MB `vendor/`
@@ -470,5 +499,26 @@ mod tests {
     fn skips_reserved_ports() {
         let p = alloc_port(45123, &[45123, 45124]).unwrap();
         assert!(p >= 45125);
+    }
+
+    #[test]
+    fn allocates_inside_the_range() {
+        let p = alloc_port_in(&(45210..=45219), &[45210, 45211]).unwrap();
+        assert!((45212..=45219).contains(&p));
+    }
+
+    #[test]
+    fn full_range_is_an_error() {
+        let reserved: Vec<u16> = (45220..=45222).collect();
+        assert!(alloc_port_in(&(45220..=45222), &reserved).is_err());
+    }
+
+    #[test]
+    fn parses_port_ranges() {
+        assert_eq!(parse_port_range("10100-10199").unwrap(), 10100..=10199);
+        assert_eq!(parse_port_range(" 10100 - 10100 ").unwrap(), 10100..=10100);
+        for bad in ["10199-10100", "10100", "0-10", "a-b", "10100-70000", ""] {
+            assert!(parse_port_range(bad).is_err(), "{bad}");
+        }
     }
 }
