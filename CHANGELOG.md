@@ -13,6 +13,12 @@ All notable changes to this project are documented here. The format follows
   new one). For machines shared by several accounts: wt only sees its own account's
   worktrees, so a port frozen by another account's stopped worktree looked free, was
   taken, and the first worktree could no longer start. One range per account prevents it.
+
+- `wt prompts <slug> [--phase up|new] [--json]`: a worktree's questions for a phase, with
+  `when` evaluated and `source` run against its saved answers, as wt's own dialogue would.
+  For a tool that asks them in its own UI, computed choices included (tenants listed from
+  a database…), then passes the answers to `wt up --set`.
+
 - `wt mv <slug> <new> [--branch name]` (alias `wt rename`): a worktree under another
   name. The branch follows when it still has the name the `branch` template gave it, or
   when `--branch` names the new one; an upstream `wt new` wired to a branch never pushed

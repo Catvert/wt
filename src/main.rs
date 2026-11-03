@@ -219,6 +219,18 @@ enum Cmd {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// A worktree's questions for a phase, `when` and `source` evaluated against its saved
+    /// answers: for a tool asking them in its own UI, then passing them to `wt up --set`.
+    Prompts {
+        #[arg(add = complete::slugs())]
+        slug: Option<String>,
+        /// The phase whose questions to list.
+        #[arg(long, value_enum, default_value = "up")]
+        phase: PromptPhase,
+        /// Machine-readable output (stable fields, independent of WT_LANG).
+        #[arg(long)]
+        json: bool,
+    },
     /// Lists the tasks declared in wt.toml.
     Tasks {
         /// Machine-readable output (stable fields, independent of WT_LANG).
@@ -241,6 +253,12 @@ enum Cmd {
     /// `wt completions zsh > ~/.zfunc/_wt`. It completes slugs, tasks and branches by
     /// asking the binary, so it stays right as worktrees come and go.
     Completions { shell: CompletionShell },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum PromptPhase {
+    Up,
+    New,
 }
 
 /// Shells `wt shell-init` knows how to write a function for. Fewer than the completions
@@ -403,6 +421,34 @@ fn try_main() -> Result<()> {
             let task = selected_task(&app, task)?;
             let slug = slug_here(&app, slug, &start)?;
             app.cmd_run(&task, &slug, &args)
+        }
+        Some(Cmd::Prompts { slug, phase, json }) => {
+            let slug = slug_here(&app, slug, &start)?;
+            let wt = app
+                .list()
+                .into_iter()
+                .find(|w| w.slug == slug)
+                .with_context(|| t!("err.unknown_worktree", slug = slug).to_string())?;
+            let phase = match phase {
+                PromptPhase::Up => config::Ask::Up,
+                PromptPhase::New => config::Ask::New,
+            };
+            let prompts = json::prompts(&app, &wt, phase);
+            if json {
+                return json::print(&prompts);
+            }
+            for p in prompts.iter().filter(|p| p.applies) {
+                let answer = p
+                    .answer
+                    .as_deref()
+                    .or(p.prompt.default.as_deref())
+                    .unwrap_or("");
+                println!("{} = {answer}    ({})", p.prompt.name, p.prompt.question);
+                for c in &p.choices {
+                    println!("    {:<16} {}", c.value, c.label);
+                }
+            }
+            Ok(())
         }
         Some(Cmd::Tasks { json: true }) => json::print(&json::tasks(&app)),
         Some(Cmd::Tasks { json: false }) => app.cmd_tasks(),

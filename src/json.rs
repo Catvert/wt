@@ -1,4 +1,5 @@
-//! Machine-readable output: `--json` on `ls`, `show`, `open --list`, `root` and `tasks`.
+//! Machine-readable output: `--json` on `ls`, `show`, `open --list`, `root`, `tasks` and
+//! `prompts`.
 //!
 //! Same reasoning as the library itself (`src/lib.rs`): a tool driving `wt` from outside
 //! — a Paseo plugin, an editor, a script — should not parse aligned, colored, translated
@@ -10,7 +11,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::config::{Ask, PromptKind, PromptOption};
+use crate::config::{Ask, Prompt, PromptKind, PromptOption};
 use crate::ops::App;
 use crate::state::{self, Worktree};
 
@@ -30,8 +31,8 @@ pub struct ProjectJson {
     pub has_main: bool,
     pub tasks: Vec<TaskJson>,
     /// The `[[prompt]]` questions, so a consumer can ask them in its own UI and pass the
-    /// answers with `--set`. Computed choices (`source`) are not run here: `has_source` says a
-    /// prompt has some, to be left to wt's own dialogue.
+    /// answers with `--set`. Computed choices (`source`) and `when` are not run here:
+    /// `wt prompts <slug> --json` evaluates them for one worktree.
     pub prompts: Vec<PromptJson>,
 }
 
@@ -50,6 +51,19 @@ pub struct PromptJson {
     /// The `when` shell condition, unevaluated.
     pub when: Option<String>,
     pub always: bool,
+}
+
+#[derive(Serialize)]
+pub struct PromptStateJson {
+    #[serde(flatten)]
+    pub prompt: PromptJson,
+    /// Does `when` hold, given the saved answers? `true` without a `when`.
+    pub applies: bool,
+    /// The choices to offer: the fixed ones, or those `source` enumerated; `oui`/`non` for a
+    /// `confirm` without options. Empty when the question does not apply.
+    pub choices: Vec<PromptOption>,
+    /// The saved answer; `null` when there is none yet (then `default` applies).
+    pub answer: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -112,25 +126,55 @@ pub fn project(app: &App) -> ProjectJson {
         has_open: app.has_open(),
         has_main: app.has_main(),
         tasks: tasks(app),
-        prompts: app
-            .project
-            .config
-            .prompts
-            .iter()
-            .map(|p| PromptJson {
-                name: p.name.clone(),
-                question: p.title().to_string(),
-                kind: p.kind,
-                ask: p.ask,
-                options: p.options.clone(),
-                has_source: p.source.is_some(),
-                default: p.default.clone(),
-                separator: p.separator.clone(),
-                when: p.when.clone(),
-                always: p.always,
-            })
-            .collect(),
+        prompts: app.project.config.prompts.iter().map(prompt).collect(),
     }
+}
+
+fn prompt(p: &Prompt) -> PromptJson {
+    PromptJson {
+        name: p.name.clone(),
+        question: p.title().to_string(),
+        kind: p.kind,
+        ask: p.ask,
+        options: p.options.clone(),
+        has_source: p.source.is_some(),
+        default: p.default.clone(),
+        separator: p.separator.clone(),
+        when: p.when.clone(),
+        always: p.always,
+    }
+}
+
+/// `wt prompts <slug> --json`: the questions of a phase for an existing worktree, `when` and
+/// `source` evaluated as wt's own dialogue would, against the answers it has saved. What a
+/// consumer needs to ask them in its own UI, computed choices included.
+pub fn prompts(app: &App, wt: &Worktree, phase: Ask) -> Vec<PromptStateJson> {
+    // `@` runs its `[main] up` without questions.
+    if state::is_main(&wt.slug) {
+        return Vec::new();
+    }
+    let opts = &wt.state.opts;
+    app.project
+        .config
+        .prompts
+        .iter()
+        .filter(|p| p.ask.covers(phase))
+        .map(|p| {
+            let applies = app.prompt_applies(p, &wt.slug, opts, phase);
+            PromptStateJson {
+                prompt: prompt(p),
+                applies,
+                // Not run for a question that does not apply: its source may well fail then
+                // (a database the answers did not ask for).
+                choices: if applies {
+                    app.prompt_choices(p, &wt.slug, opts, phase)
+                } else {
+                    Vec::new()
+                },
+                answer: opts.get(&p.name).cloned(),
+            }
+        })
+        .collect()
 }
 
 pub fn tasks(app: &App) -> Vec<TaskJson> {

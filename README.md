@@ -252,8 +252,8 @@ VITE_PORT = "{{port.vite}}"
 ### Machine-readable output (`--json`)
 
 A tool driving `wt` from outside — an agent interface, an editor, a script — should not
-parse aligned, colored, translated text. `wt ls`, `wt show`, `wt open --list`, `wt root`
-and `wt tasks` take `--json`:
+parse aligned, colored, translated text. `wt ls`, `wt show`, `wt open --list`, `wt root`,
+`wt tasks` and `wt prompts` take `--json`:
 
 | Command | Output |
 |---|---|
@@ -262,6 +262,7 @@ and `wt tasks` take `--json`:
 | `wt open <slug> --list --json` | `[{url, label}]`; an empty list rather than an error when there is nothing to open |
 | `wt root --json` | `{name, config, main, root, has_up, has_down, has_status, has_ports, has_open, has_main, tasks}` |
 | `wt tasks --json` | `[{name, description, interactive}]` |
+| `wt prompts <slug> [--phase up\|new] --json` | the phase's `[[prompt]]` questions as in `root`, plus `applies` (`when` evaluated), `choices` (`source` run) and `answer` (the saved one, `null` if none), against the worktree's saved answers |
 
 `checkout` is where the files really are — the adopted path for an adopted worktree,
 `dir` otherwise; `up` is `null` when the project declares no `[status] up`. The output does

@@ -718,6 +718,12 @@ name = "tenants"
 ask = "both"
 type = "multi"
 source = "echo demo"
+
+[[prompt]]
+name = "acme"
+type = "multi"
+when = "test \"$WT_OPT_TENANTS\" = acme"
+source = "echo acme"
 "#,
     );
     let dir = project.path();
@@ -776,6 +782,24 @@ source = "echo demo"
     assert_eq!(root["prompts"][1]["ask"], "both");
     assert_eq!(root["prompts"][1]["has_source"], true);
     assert_eq!(root["prompts"][1]["question"], "tenants");
+
+    // A phase's questions for one worktree: `source` run, the saved answer given.
+    let prompts = json(&["prompts", "demo", "--json"]);
+    assert_eq!(prompts.as_array().unwrap().len(), 3);
+    assert_eq!(prompts[0]["name"], "services");
+    assert_eq!(prompts[0]["applies"], true);
+    assert_eq!(prompts[0]["answer"], serde_json::Value::Null);
+    assert_eq!(prompts[0]["choices"][0]["value"], "queue");
+    assert_eq!(prompts[1]["name"], "tenants");
+    assert_eq!(prompts[1]["answer"], "demo");
+    assert_eq!(prompts[1]["choices"][0]["value"], "demo");
+    assert_eq!(prompts[1]["has_source"], true);
+    // `when` false for the saved answers: its source is not run.
+    assert_eq!(prompts[2]["applies"], false);
+    assert_eq!(prompts[2]["choices"].as_array().unwrap().len(), 0);
+    let new = json(&["prompts", "demo", "--phase", "new", "--json"]);
+    assert_eq!(new.as_array().unwrap().len(), 1);
+    assert_eq!(new[0]["name"], "tenants");
 
     // `--json` only makes sense with `--list`: opening a browser has no output to format.
     assert!(!wt(dir)

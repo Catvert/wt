@@ -262,7 +262,7 @@ VITE_PORT = "{{port.vite}}"
 
 Un outil qui pilote `wt` de l'extérieur — une interface d'agents, un éditeur, un script —
 n'a pas à analyser un texte aligné, coloré et traduit. `wt ls`, `wt show`, `wt open --list`,
-`wt root` et `wt tasks` acceptent `--json` :
+`wt root`, `wt tasks` et `wt prompts` acceptent `--json` :
 
 | Commande | Sortie |
 |---|---|
@@ -271,6 +271,7 @@ n'a pas à analyser un texte aligné, coloré et traduit. `wt ls`, `wt show`, `w
 | `wt open <slug> --list --json` | `[{url, label}]` ; une liste vide plutôt qu'une erreur quand il n'y a rien à ouvrir |
 | `wt root --json` | `{name, config, main, root, has_up, has_down, has_status, has_ports, has_open, has_main, tasks}` |
 | `wt tasks --json` | `[{name, description, interactive}]` |
+| `wt prompts <slug> [--phase up\|new] --json` | les questions `[[prompt]]` de la phase comme dans `root`, plus `applies` (`when` évalué), `choices` (`source` lancée) et `answer` (la réponse enregistrée, `null` sinon), d'après les réponses enregistrées du worktree |
 
 `checkout` est l'endroit où sont vraiment les fichiers — le chemin adopté pour un worktree
 adopté, `dir` sinon ; `up` vaut `null` quand le projet ne déclare pas de `[status] up`. La
